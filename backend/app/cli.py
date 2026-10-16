@@ -1,6 +1,7 @@
 """运维 CLI。
 
-**只有一个命令：``import-game-data``。**
+命令有两个：``import-game-data``（导入升级数据）与 ``seed-dev-rankings``
+（开发期灌入榜单夹具数据，无真实 Token 时用）。
 
 原计划里还有 ``create-admin``，已按 R3 裁定删除 —— 后台认证走环境变量
 ``ADMIN_USERNAME`` / ``ADMIN_PASSWORD``，规格中不存在任何管理员表。保留那个
@@ -43,6 +44,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="只解析与统计，不写库",
+    )
+
+    seed = sub.add_parser(
+        "seed-dev-rankings",
+        help="灌入榜单夹具数据（开发期，无真实 Token 时用）",
+    )
+    seed.add_argument(
+        "--location",
+        type=int,
+        default=32000001,
+        help="地区 ID（默认 32000001 = China）",
     )
     return parser
 
@@ -104,6 +116,22 @@ async def _import_with_own_session(rows) -> int:
         await session.close()
 
 
+async def cmd_seed_dev_rankings(location: int = 32000001) -> int:
+    """灌入地区维表与部落榜样本，返回写入的榜单条数。"""
+    from app.db.session import async_sessionmaker
+    from app.devseed import seed_dev_rankings
+
+    maker = async_sessionmaker()
+    session = await maker.__aenter__()
+    try:
+        counts = await seed_dev_rankings(session, location_id=location)
+    finally:
+        await session.__aexit__(None, None, None)
+        await session.close()
+    print(f"已灌入：{counts}")
+    return counts.get("rankings", 0)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(
@@ -113,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
         count = asyncio.run(
             cmd_import_game_data(cache_dir=args.cache_dir, dry_run=args.dry_run)
         )
+        return 0 if count >= 0 else 1
+    if args.command == "seed-dev-rankings":
+        count = asyncio.run(cmd_seed_dev_rankings(location=args.location))
         return 0 if count >= 0 else 1
     return 1
 
