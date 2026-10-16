@@ -13,6 +13,8 @@ import axios from 'axios'
 
 import type { Envelope, Meta } from './types'
 
+export type { Envelope, Meta } from './types'
+
 const RAW_BASE = import.meta.env.VITE_API_BASE ?? ''
 const BASE_URL = String(RAW_BASE).replace(/\/+$/, '')
 
