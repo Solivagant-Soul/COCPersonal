@@ -1,0 +1,81 @@
+# 单副本部署栈：api + postgres + nginx
+#
+# 刻意不映射 postgres / api 的端口：只有 nginx 对外。
+# 少一个对外端口就少一处能被直接攻击的入口。
+
+name: coc-backend
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-coc}
+      POSTGRES_USER: ${POSTGRES_USER:-coc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须在 .env 里设置 POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coc} -d ${POSTGRES_DB:-coc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # 单副本一体：API 与采集调度器同进程（AGENTS.md）
+      APP_ROLE: ${APP_ROLE:-all}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-coc}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coc}
+      COC_API_TOKEN: ${COC_API_TOKEN:?必须在 .env 里设置 COC_API_TOKEN}
+      COC_RATE_LIMIT: ${COC_RATE_LIMIT:-8}
+      # 留空走官方；填 https://cocproxy.royaleapi.dev/v1 走 RoyaleAPI 代理
+      COC_BASE_URL: ${COC_BASE_URL:-}
+      COC_TIMEOUT: ${COC_TIMEOUT:-15}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?必须在 .env 里设置 ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?必须在 .env 里设置 ADMIN_PASSWORD}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?必须在 .env 里设置 ADMIN_SECRET_KEY}
+      MEDIA_ROOT: /data/media
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?必须在 .env 里设置 PUBLIC_BASE_URL}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # 投稿图片。api 需要**可写**，nginx 只读挂载。
+      - media:/data/media
+    healthcheck:
+      # 用 /readyz 而不是 /healthz：后者只证明进程活着，
+      # DB 挂了照样 200，编排器会把流量继续打进来。
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # 必须挂到 **/etc/nginx/templates/**（.template 后缀）：官方镜像启动时
+      # 会对它做变量替换再生成 /etc/nginx/conf.d/default.conf。
+      # 直接挂到 conf.d 的话 ${SERVER_NAME} 不会被替换，nginx 起不来。
+      - ./deploy/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      # 只读：nginx 永远不需要写媒体目录
+      - media:/data/media:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    environment:
+      SERVER_NAME: ${PUBLIC_BASE_URL:-localhost}
+
+volumes:
+  pgdata:
+  media:

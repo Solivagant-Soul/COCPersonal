@@ -1,0 +1,67 @@
+[
+  {
+    "name": "Barbarian",
+    "category": "troop",
+    "village": "home",
+    "unlock": {
+      "hall": 1,
+      "cost": 0
+    },
+    "upgrade": {
+      "cost": [
+        10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000,
+        90000, 100000, 110000, 120000
+      ],
+      "time": [60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720],
+      "resource": "Elixir"
+    }
+  },
+  {
+    "name": "Barbarian King",
+    "category": "hero",
+    "village": "builderBase",
+    "unlock": {
+      "hall": 5,
+      "building": "Barbarian King Altar",
+      "buildingLevel": 2
+    },
+    "upgrade": {
+      "cost": [20000, 30000, 40000, 50000, 60000, 70000],
+      "time": [3600, 7200, 10800, 14400, 18000, 21600],
+      "resource": "Dark Elixir"
+    }
+  },
+  {
+    "name": "Wall",
+    "category": "building",
+    "village": "home",
+    "unlock": {
+      "hall": 2
+    },
+    "upgrade": {
+      "cost": [1000, 2000, 5000, 10000, 20000],
+      "time": [0, 60, 300, 600, 900],
+      "resource": "Gold"
+    }
+  },
+  {
+    "name": "Inferno Tower",
+    "category": "building",
+    "village": "home",
+    "unlock": {
+      "hall": 5
+    }
+  },
+  {
+    "name": "Super Barbarian",
+    "category": "superTroop",
+    "village": "home",
+    "unlock": {
+      "hall": 9
+    },
+    "resourceCost": [
+      { "resource": "Dark Elixir", "count": 10000 }
+    ],
+    "cooldown": 1800
+  }
+]

@@ -1,0 +1,56 @@
+{
+  "_source": "HAND-BUILT PLACEHOLDER — 无真实 Token，按官方文档字段构造。Task 5 交付时未抓取真实响应。",
+  "_todo": "拿到 Supercell API Token 后用真实响应替换，并删除 _source/_todo 两个键。",
+  "_note": "覆盖 previousRank 大于/小于 0 两种形态：前者表示新上榜，后者表示掉名次。",
+  "items": [
+    {
+      "tag": "#2PP",
+      "name": "Reddit Zulu",
+      "location": {"id": 32000001, "name": "China", "isCountry": true, "countryCode": "CN"},
+      "badgeUrls": {
+        "small": "https://api-assets.clashofclans.com/badges/small/badge.png",
+        "large": "https://api-assets.clashofclans.com/badges/large/badge.png",
+        "medium": "https://api-assets.clashofclans.com/badges/medium/badge.png"
+      },
+      "clanLevel": 18,
+      "members": 44,
+      "clanPoints": 55406,
+      "clanVersusPoints": 41835,
+      "rank": 1,
+      "previousRank": 1
+    },
+    {
+      "tag": "#8QU8J9J",
+      "name": "Sinai",
+      "location": {"id": 32000001, "name": "China", "isCountry": true, "countryCode": "CN"},
+      "badgeUrls": {
+        "small": "https://api-assets.clashofclans.com/badges/small/b2.png",
+        "large": "https://api-assets.clashofclans.com/badges/large/b2.png",
+        "medium": "https://api-assets.clashofclans.com/badges/medium/b2.png"
+      },
+      "clanLevel": 17,
+      "members": 50,
+      "clanPoints": 55231,
+      "clanVersusPoints": 41102,
+      "rank": 2,
+      "previousRank": 5
+    },
+    {
+      "tag": "#9GP0CV9",
+      "name": "Nova China",
+      "location": {"id": 32000001, "name": "China", "isCountry": true, "countryCode": "CN"},
+      "badgeUrls": {
+        "small": "https://api-assets.clashofclans.com/badges/small/b3.png",
+        "large": "https://api-assets.clashofclans.com/badges/large/b3.png",
+        "medium": "https://api-assets.clashofclans.com/badges/medium/b3.png"
+      },
+      "clanLevel": 19,
+      "members": 50,
+      "clanPoints": 55088,
+      "clanVersusPoints": 40987,
+      "rank": 3,
+      "previousRank": 0
+    }
+  ],
+  "paging": {"cursors": {}}
+}

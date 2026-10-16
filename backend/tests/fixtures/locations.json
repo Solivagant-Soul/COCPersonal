@@ -1,0 +1,30 @@
+{
+  "_source": "HAND-BUILT PLACEHOLDER — 无真实 Token，按官方文档字段构造。Task 5 交付时未抓取真实响应。",
+  "_todo": "拿到 Supercell API Token 后用真实响应替换，并删除 _source/_todo 两个键。",
+  "_note": "覆盖三类情况：非国家地区（无 countryCode）、国家地区（有 countryCode）、以及官方偶发的不带 isCountry 的条目。",
+  "items": [
+    {
+      "id": 32000000,
+      "name": "Global",
+      "isCountry": false
+    },
+    {
+      "id": 32000010,
+      "name": "Bosnia and Herzegovina",
+      "isCountry": true,
+      "countryCode": "BA"
+    },
+    {
+      "id": 32000001,
+      "name": "China",
+      "isCountry": true,
+      "countryCode": "CN"
+    },
+    {
+      "id": 32000006,
+      "name": "International",
+      "isCountry": false
+    }
+  ],
+  "paging": {"cursors": {}}
+}

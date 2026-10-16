@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coc-backend"
+version = "0.1.0"
+description = "COC 微信小程序后端"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn",
+    # 上限 <2.1 是有意为之：2.1.x wheel 的 C 扩展 _util_cy.pyd 在本机（WinError 4551）
+    # 与 Docker 客户机上均无法加载。开发若放开，Task 20 的 Docker 构建会解析到
+    # 2.1.x，产出一个 import 即崩的镜像。见 SDD 账本 R8 裁定。
+    "sqlalchemy>=2.0,<2.1",
+    "asyncpg",
+    "alembic",
+    "httpx>=0.28",
+    "pydantic-settings",
+    "apscheduler>=3.10",
+    "sqladmin",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# 全套件共用一个事件循环（R18）。默认的函数级循环会让模块级 engine 的连接池
+# 每个用例都必须 dispose，而本地重连一次要 2.1s —— 光重连就让全量套件多花 400s。
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"
+# 让 `pytest`（不带 python -m）运行时也能从仓库根导入 app 包
+pythonpath = ["."]

@@ -1,0 +1,80 @@
+{
+  "_source": "HAND-BUILT PLACEHOLDER — 无真实 Token，按官方文档字段构造。Task 5 交付时未抓取真实响应。",
+  "_todo": "拿到 Supercell API Token 后用真实响应替换，并删除 _source/_todo 两个键。",
+  "_note": "刻意保留若干可选字段缺失（无 clan 时 role 缺失、无 league 等），用于验证 mapper 容错。",
+  "tag": "#9QJ8L0",
+  "name": "Vasilije",
+  "expLevel": 205,
+  "trophies": 4902,
+  "builderBaseTrophies": 4826,
+  "requiredTrophies": 0,
+  "bestTrophies": 5123,
+  "warStars": 2138,
+  "attackWins": 1842,
+  "defenseWins": 118,
+  "builderHallLevel": 10,
+  "requiredBuilderBaseTrophies": 0,
+  "versusBattleWins": 1204,
+  "versusTrophies": 4826,
+  "requiredVersusTrophies": 0,
+  "townHallLevel": 16,
+  "townHallWeaponLevel": 5,
+  "builderBaseLeague": {"id": 53000021, "name": "Builder Base League II"},
+  "league": {
+    "id": 29000022,
+    "name": "Legend League",
+    "iconUrls": {
+      "small": "https://api-assets.clashofclans.com/leagues/small/l.png",
+      "tiny": "https://api-assets.clashofclans.com/leagues/tiny/l.png"
+    }
+  },
+  "legendStatistics": {
+    "legendTrophies": 318,
+    "currentSeason": {"id": "2026-09", "rank": 124, "trophies": 5482},
+    "previousSeason": {"id": "2026-08", "rank": 203, "trophies": 5420},
+    "bestSeason": {"id": "2026-07", "rank": 88, "trophies": 5501},
+    "previousVersusSeason": {"id": "2026-08", "rank": 90, "trophies": 4790},
+    "bestVersusSeason": {"id": "2026-07", "rank": 44, "trophies": 4833}
+  },
+  "clan": {
+    "tag": "#2PP",
+    "name": "Reddit Zulu",
+    "clanLevel": 18,
+    "badgeUrls": {
+      "small": "https://api-assets.clashofclans.com/badges/small/badge.png",
+      "large": "https://api-assets.clashofclans.com/badges/large/badge.png",
+      "medium": "https://api-assets.clashofclans.com/badges/medium/badge.png"
+    }
+  },
+  "role": "leader",
+  "donations": 2268,
+  "donationsReceived": 2182,
+  "achievements": [
+    {
+      "name": "Keep Your Account Safe!",
+      "stars": 3,
+      "value": 100,
+      "target": 100,
+      "info": "Complete every achievement in the Home Village."
+    },
+    {"name": "Bigger Coffers", "stars": 3, "value": 18, "target": 15, "info": "Upgrade a Treasury to level 5"}
+  ],
+  "labels": [
+    {"id": 57000000, "name": "Clan War Lover", "iconUrls": {"small": "https://api-assets.clashofclans.com/labels/small/s.png"}}
+  ],
+  "troops": [
+    {"name": "Barbarian", "level": 11, "maxLevel": 12, "village": "home"},
+    {"name": "Archer", "level": 11, "maxLevel": 12, "village": "home"},
+    {"name": "Hog Rider", "level": 13, "maxLevel": 14, "village": "home"},
+    {"name": "Root Rider", "level": 3, "maxLevel": 3, "village": "builderBase"}
+  ],
+  "heroes": [
+    {"name": "Barbarian King", "level": 85, "maxLevel": 95, "village": "home"},
+    {"name": "Archer Queen", "level": 82, "maxLevel": 95, "village": "home"},
+    {"name": "Battle Machine", "level": 35, "maxLevel": 40, "village": "builderBase"}
+  ],
+  "spells": [
+    {"name": "Lightning Spell", "level": 10, "maxLevel": 11, "village": "home"},
+    {"name": "Rage Spell", "level": 9, "maxLevel": 10, "village": "home"}
+  ]
+}

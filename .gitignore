@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.env
+# Node
+node_modules/
+dist/
+# 本地/编辑器
+.cache/
+.superpowers/
+.DS_Store

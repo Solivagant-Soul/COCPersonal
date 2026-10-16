@@ -1,0 +1,83 @@
+{
+  "_source": "HAND-BUILT PLACEHOLDER — 无真实 Token，按官方文档字段构造。Task 5 交付时未抓取真实响应。",
+  "_todo": "拿到 Supercell API Token 后，用真实响应替换本文件，并删除 _source/_todo 两个键。",
+  "_note": "字段名与官方 API 文档一致；值域参考官方示例。缺失字段与多余字段的容错由 tests/coc/test_mappers.py 覆盖。",
+  "tag": "#2PP",
+  "name": "Reddit Zulu",
+  "type": "open",
+  "description": "Reddit Zulu, the official Reddit clan of /r/clashofclans. Clan Level 18. FWA matched wars.",
+  "clanLevel": 18,
+  "clanPoints": 55406,
+  "clanVersusPoints": 41835,
+  "requiredTrophies": 1200,
+  "warFrequency": "always",
+  "warWinStreak": 3,
+  "warWins": 402,
+  "warTies": 9,
+  "warLosses": 116,
+  "isWarLogPublic": true,
+  "warLeague": {"id": 48000006, "name": "Master League I"},
+  "capitalLeague": {"id": 85000020, "name": "Champion League I"},
+  "members": 44,
+  "location": {
+    "id": 32000010,
+    "name": "Bosnia and Herzegovina",
+    "isCountry": true,
+    "countryCode": "BA"
+  },
+  "labels": [
+    {"id": 56000000, "name": "Clan Wars", "iconUrls": {"small": "https://api-assets.clashofclans.com/labels/small/small_label.png"}},
+    {"id": 56000001, "name": "Clan War League", "iconUrls": {"small": "https://api-assets.clashofclans.com/labels/small/small_label.png"}}
+  ],
+  "requiredBuilderBaseLeague": {"id": 53000021, "name": "Builder Base League II"},
+  "clanCapital": {
+    "capitalHallLevel": 10,
+    "districts": [
+      {"id": 7000000, "name": "Capital Peak", "districtHallLevel": 5},
+      {"id": 7000001, "name": "Barbarian Camp", "districtHallLevel": 5},
+      {"id": 7000002, "name": "Balloon Lagoon", "districtHallLevel": 4},
+      {"id": 7000003, "name": "Builder's Workshop", "districtHallLevel": 4},
+      {"id": 7000004, "name": "Clock Tower", "districtHallLevel": 5},
+      {"id": 7000005, "name": "Clan Castle", "districtHallLevel": 5},
+      {"id": 7000006, "name": "Dark Elixir Barracks", "districtHallLevel": 4},
+      {"id": 7000007, "name": "Dark Elixir Drill", "districtHallLevel": 4},
+      {"id": 7000008, "name": "Dark Spell Factory", "districtHallLevel": 4},
+      {"id": 7000009, "name": "Elixir Barracks", "districtHallLevel": 4},
+      {"id": 7000010, "name": "Elixir Storage", "districtHallLevel": 5},
+      {"id": 7000011, "name": "Goblin Mine", "districtHallLevel": 4},
+      {"id": 7000012, "name": "Spell Factory", "districtHallLevel": 4}
+    ]
+  },
+  "chatLanguage": {"id": 32000010, "name": "English", "languageCode": "EN"},
+  "memberList": [
+    {
+      "tag": "#9QJ8L0",
+      "name": "Vasilije",
+      "role": "leader",
+      "expLevel": 205,
+      "trophies": 4902,
+      "builderBaseTrophies": 4826,
+      "requiredTrophies": 0,
+      "donations": 2268,
+      "donationsReceived": 2182,
+      "clanRank": 1,
+      "previousClanRank": 1,
+      "league": {"id": 29000022, "name": "Legend League", "iconUrls": {"small": "https://api-assets.clashofclans.com/leagues/small/l.png", "tiny": "https://api-assets.clashofclans.com/leagues/tiny/l.png"}},
+      "playerHouse": {"elements": [{"id": 82000000, "type": "ground"}]}
+    },
+    {
+      "tag": "#8L9P2R",
+      "name": "Covert",
+      "role": "coLeader",
+      "expLevel": 199,
+      "trophies": 4885,
+      "builderBaseTrophies": 4712,
+      "requiredTrophies": 0,
+      "donations": 210,
+      "donationsReceived": 402,
+      "clanRank": 2,
+      "previousClanRank": 2,
+      "league": {"id": 29000021, "name": "Titan League I", "iconUrls": {"small": "https://api-assets.clashofclans.com/leagues/small/t1.png"}}
+    }
+  ]
+}
