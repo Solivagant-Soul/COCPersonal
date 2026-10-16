@@ -19,7 +19,7 @@ from fastapi import HTTPException
 
 from app.api.schemas import MetaOut
 from app.coc.tags import normalize_tag
-from app.db.session import get_session
+from app.db.session import new_session
 
 # COC tag：# 可选前缀 + 3-10 位字母数字。不强制大写（#2pp 也受理，归一化后使用），
 # 因为小程序用户从输入法/粘贴得到的标签大小写随机（Review Focus 第 1 条）。
@@ -40,8 +40,8 @@ def validate_tag(tag: str) -> str:
 
 
 async def open_session():
-    """取一个 session。``get_session`` 是 async_generator，不能用 async with。"""
-    return await anext(get_session())
+    """取一个独立 session，由调用方负责 ``close()``。"""
+    return new_session()
 
 
 def build_meta(status, fetched_at, ttl: int) -> MetaOut:

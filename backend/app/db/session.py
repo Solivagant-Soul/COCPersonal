@@ -37,3 +37,14 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI 依赖：每次请求一个 session，请求结束即关闭。"""
     async with async_sessionmaker() as session:
         yield session
+
+
+def new_session() -> AsyncSession:
+    """新建一个独立 session（非依赖注入场景用；**调用方负责 close**）。
+
+    不要用 ``await anext(get_session())`` 取 session：那个 async generator 永远不会
+    被关闭，垃圾回收时会对已经 close 的 session 再 close 一次，日志里冒出
+    ``sqlalchemy.exc.IllegalStateChangeError: Method 'close()' can't be called here``
+    （Task 9 首次在真实进程里联调时暴露；测试只断言响应，看不见这条日志噪声）。
+    """
+    return async_sessionmaker()

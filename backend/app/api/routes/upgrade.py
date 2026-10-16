@@ -27,9 +27,9 @@ VILLAGE_VALUES = ("home", "builderBase")
 
 
 async def _session():
-    from app.db.session import get_session
+    from app.db.session import new_session
 
-    return await anext(get_session())
+    return new_session()
 
 
 def _content_meta(fetched_at=None) -> MetaOut:

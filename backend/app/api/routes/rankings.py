@@ -40,9 +40,9 @@ _METRICS_BY_KIND = {
 
 
 async def _session():
-    from app.db.session import get_session
+    from app.db.session import new_session
 
-    return await anext(get_session())
+    return new_session()
 
 
 def _clamp(page_size: int) -> int:

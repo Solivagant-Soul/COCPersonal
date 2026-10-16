@@ -150,3 +150,9 @@ def create_app() -> FastAPI:
     # 官方数据与采集表在后台全部只读或未注册，见 admin.py 的说明。
     app.state.admin = admin.build_admin(app, engine, settings)
     return app
+
+
+# 模块级实例：``Dockerfile`` 的 ``CMD`` 与文档都写 ``uvicorn app.main:app``，
+# 而应用是 ``create_app()`` 工厂造出来的 —— 这个赋值是那条命令的落点。
+# （原 COCBack 缺这一行，因 Docker 从未在本机跑过而未被发现；Task 9 联调时暴露。）
+app = create_app()
