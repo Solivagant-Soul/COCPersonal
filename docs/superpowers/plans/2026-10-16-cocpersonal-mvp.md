@@ -566,4 +566,63 @@ git commit -m "docs: 补齐开发/构建/部署说明并更新 AGENTS.md"
 
 ## 联调记录
 
-（Task 9 完成后在此填写：起服务的命令、手测通过项、遇到的问题与修复。）
+**日期**：2026-10-16 / 17（本机 Windows）。**结论**：后端 HTTP 端到端**通过**；前端由组件测试 + 生产构建覆盖；**浏览器 DOM 手测在本机被环境阻断**（见「未完成项」）。
+
+### 起服务（本机 Windows）
+
+```powershell
+# 1) 本地 PG（免安装，非 Docker）
+C:\pgportable\pgsql\bin\pg_isready.exe -h 127.0.0.1 -p 5433 -U postgres
+
+# 2) 后端：.env 里 COC_API_TOKEN 留空 → 自动启用 dev 夹具上游
+cd backend; python -m app.cli seed-dev-rankings          # 已灌入：{'locations': 4, 'rankings': 3}
+cd backend; python -m uvicorn app.main:app --port 8000
+
+# 3) 前端开发服务器（/api 反代到 :8000）
+cd frontend; npm run dev                                  # http://localhost:5173
+```
+
+### 通过项（后端自检，逐条实测）
+
+| 检查 | 结果 |
+| --- | --- |
+| `GET /healthz` | 200 `{"status":"ok"}` |
+| `GET /readyz` | 200 `{"status":"ready"}` |
+| `GET /api/v1/players/%239QJ8L0` | 200，`data.tag=#9QJ8L0`、`name=Vasilije`、`trophies=4902`，`meta.cache=MISS` |
+| `GET /api/v1/clans/%232PP` | 200，`data.name=Reddit Zulu`、`members=44` |
+| `GET /api/v1/locations` | 200，`total=2`，首个为 `China(32000001)` |
+| `GET /api/v1/rankings/clans?locationId=32000001` | 200，`total=3`，`meta.cache=HIT`（种子数据） |
+| `GET /api/v1/rankings/clans?locationId=32000001&page_size=500` | **200**（按约定截断为 50，不是 422） |
+| `GET /api/v1/players/ab` | 400，错误体 `{"error":{"code":"INVALID_TAG","message":...,"upstream_reason":null}}` |
+| 经 Vite(5173) 反代 `/api/v1/locations` | 200，信封与直连一致（证明 `/api` 代理链路通） |
+| `vite preview`(4173) 产物 | `index.html` 944B、入口 bundle 1,010,682B、经其反代 `/api/v1/rankings/clans` 200 |
+| 前端测试 `npm run test` | **32 passed**（信封/错误码/STALE/tag 归一化/大数防塌/榜单切换/空态/page_size>50） |
+| 前端构建 `npm run build` | exit 0 |
+
+### 联调中发现并修复的两处后端潜伏缺陷
+
+测试全绿并不等于「跑起来是好的」——这两处都只有**真实进程**才会暴露：
+
+1. **`uvicorn app.main:app` 根本起不来**。文档与 `backend/Dockerfile` 的 `CMD` 都写这个入口，
+   但 `app/main.py` 只有 `create_app()` 工厂、**从无模块级 `app`**。测试只调 `create_app()`，
+   Docker 又从未在本机跑过（后端 AGENTS.md 的 A2/B2 欠账），所以一直没暴露。
+   → 在 `app/main.py` 末尾补 `app = create_app()`。
+2. **每次请求都往日志里扔一条 `IllegalStateChangeError`**。5 处 `anext(get_session())`
+   取出 session 后路由又自行 `close()`，那个 async generator 永远不会被关闭，
+   垃圾回收时对已关闭的 session 再关一次。
+   → `app/db/session.py` 新增 `new_session()`（直接产出 `AsyncSession`，调用方负责 close），
+   替换 `_common.py` / `rankings.py` / `content.py` / `submissions.py` / `upgrade.py` 五处。
+   修后重启，6 个真实请求全 200，日志中该异常计数 **0**；全量 494 测试仍全绿。
+
+### 未完成项（本机环境阻断，非代码问题）
+
+- **浏览器 DOM 冒烟未做**：本机桌面浏览器被**系统级 AdGuard** 过滤（`local.adguard.org`）。
+  它会给页面注入脚本，并在模块请求上返回 **502 Bad Gateway** /
+  `ERR_INCOMPLETE_CHUNKED_ENCODING`（连 curl 拿到的 HTML 里也被注入了它的 `<script>`）。
+  因此在浏览器里 `#app` 始终为空——`/src/main.ts`、`element-plus.js`、`App.vue` 等
+  子资源被 AdGuard 拦掉。换 `localhost`、换 `vite preview` 的单个 bundle 都一样。
+  **代码侧证据**：同一批静态资源用 curl 取是完整的（入口 bundle 1,010,682B，未截断）。
+  在未装 AdGuard 的机器（或临时关闭它）上重跑本节点即可补上这一条。
+- **夹具上游对任意 `/players/*` 都返回同一份样本**，所以本地**无法**触发
+  「玩家不存在（404）」的真实路径；该分支由组件测试（mock）覆盖。
+

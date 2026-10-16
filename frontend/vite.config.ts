@@ -10,6 +10,12 @@ export default defineConfig({
       '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
     },
   },
+  // `vite preview`（跑 dist 产物）需要自己的一份代理配置，它不共用 server.proxy。
+  preview: {
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
