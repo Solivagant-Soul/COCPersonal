@@ -1,5 +1,10 @@
 # COCPersonal MVP 实施计划
 
+> **状态：11 / 11 任务全部完成并已提交**（2026-10-17，`main` 分支，`0b56079` … `2e47911`）。
+> 本机可做的验证都做了：后端 494 passed、前端 32 passed、`npm run build` 通过、真实进程
+> HTTP 端到端通过。**两项本机做不到**（浏览器 DOM 手测、`docker compose up`）已在文末
+> 「联调记录 → 未完成项」写明原因与补做方式 —— 别把「全绿」当成「全好」。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 `COCPersonal` 单仓内交付「COCBack 后端（全量搬入）+ Vue3 网页前端（查询 + 排行榜）」的 MVP，可在 Windows 本地跑通、并在 Linux 用 Docker Compose 部署。
@@ -44,7 +49,7 @@
 - Consumes: `..\COCBack` 现有文件。
 - Produces: `backend/` 包 `app`（`create_app()`、`app.cli`、`alembic` 迁移链）；后续任务在其上增改。
 
-- [ ] **Step 1: 复制后端**
+- [x] **Step 1: 复制后端**
 
 ```powershell
 cd F:\Python_file\MiniProgram\COCPersonal
@@ -56,11 +61,11 @@ Get-ChildItem -Recurse -Directory backend -Filter __pycache__ | Remove-Item -Rec
 ```
 说明：**不复制** `docker-compose.yml`（由根 Task 10 的组合 compose 取代）、`.env`（本地私有）、`.git`/`.cache`/`.pytest_cache`/`.superpowers`/`docs`。`backend/AGENTS.md` 作为后端环境陷阱的权威参考保留。
 
-- [ ] **Step 2: 新建 `backend/README.md`**（`Dockerfile` 有 `COPY pyproject.toml README.md ./`，缺失则镜像构建失败）
+- [x] **Step 2: 新建 `backend/README.md`**（`Dockerfile` 有 `COPY pyproject.toml README.md ./`，缺失则镜像构建失败）
 
 内容至少：项目名 `coc-backend`、一句用途、`python -m pytest -q` 运行测试、`.env.example` → `.env` 说明。
 
-- [ ] **Step 3: 新建仓库根 `.gitignore`**
+- [x] **Step 3: 新建仓库根 `.gitignore`**
 
 ```gitignore
 # Python
@@ -78,7 +83,7 @@ dist/
 .DS_Store
 ```
 
-- [ ] **Step 4: 起本地 PG 并跑后端测试**
+- [x] **Step 4: 起本地 PG 并跑后端测试**
 
 ```powershell
 C:\pgportable\pgsql\bin\pg_isready.exe -h 127.0.0.1 -p 5433 -U postgres
@@ -87,7 +92,7 @@ cd backend; python -m pytest -q
 ```
 Expected: 全绿（COCBack 基线为 486 项）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -110,7 +115,7 @@ git commit -m "feat: 全量搬入 COCBack 后端并建立仓库骨架"
   - `class FixtureTransport(httpx.AsyncBaseTransport)`，`async def handle_async_request(self, request: httpx.Request) -> httpx.Response`，按 `request.url.path` 返回夹具。
   - `app/main.py` 中：`transport = FixtureTransport() if is_placeholder_token(settings.coc_api_token) else None`，传给 `CocClient(transport=transport)`。
 
-- [ ] **Step 1: 写失败测试 `tests/coc/test_devfixtures.py`**
+- [x] **Step 1: 写失败测试 `tests/coc/test_devfixtures.py`**
 
 ```python
 import httpx
@@ -140,24 +145,24 @@ async def test_transport_maps_rankings_path():
     assert isinstance(resp.json()["items"], list)
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd backend; python -m pytest tests/coc/test_devfixtures.py -q`
 Expected: FAIL（`ModuleNotFoundError: app.coc.devfixtures`）。
 
-- [ ] **Step 3: 实现 `app/coc/devfixtures.py`**
+- [x] **Step 3: 实现 `app/coc/devfixtures.py`**
 
 要点：`__init__` 里 `Path` 定位到 `tests/fixtures/`（相对仓库根，可用 `Path(__file__).resolve().parents[2] / "tests" / "fixtures"`）；`handle_async_request` 用 `request.url.path` 后缀匹配：
 `/players/` → `player_profile.json`；`/clans/search` → 返回 `{"items": [...]}`（可用 `clan_detail` 造一条）；`/clans/` → `clan_detail.json`；`/locations` → `locations.json`；`/rankings/clans` → `ranking_clans.json`；其他 → `httpx.Response(404, json={"reason": "notFound"})`。均返回 `httpx.Response(200, json=<dict>)`。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `cd backend; python -m pytest tests/coc/test_devfixtures.py -q`
 Expected: PASS。
 
-- [ ] **Step 5: 接入 `app/main.py`**（仅改 `lifespan` 里 `CocClient(...)` 构造：按 `is_placeholder_token` 传 `transport`，token 为空时传 `"PLACEHOLDER"`）。
+- [x] **Step 5: 接入 `app/main.py`**（仅改 `lifespan` 里 `CocClient(...)` 构造：按 `is_placeholder_token` 传 `transport`，token 为空时传 `"PLACEHOLDER"`）。
 
-- [ ] **Step 6: 回归 + Commit**
+- [x] **Step 6: 回归 + Commit**
 
 Run: `cd backend; python -m pytest -q`
 Expected: 全绿。
@@ -180,7 +185,7 @@ git commit -m "feat: 新增 dev 夹具上游，无真实 Token 也能应答查�
 - Consumes: `app.collector.jobs._upsert.upsert_all(session, model, rows, conflict)`；`app.collector.rankings_service.replace_rankings(session, kind, location_id, league_id, season_id, items, now=None) -> int`、`RankingKind`；`app.db.models.Location/Ranking`。
 - Produces: `async def seed_dev_rankings(session, *, location_id: int | None = None, fixtures_dir: Path | None = None) -> dict[str, int]`，返回 `{"locations": n, "rankings": m}`。
 
-- [ ] **Step 1: 写失败测试 `tests/test_devseed.py`**
+- [x] **Step 1: 写失败测试 `tests/test_devseed.py`**
 
 ```python
 from sqlalchemy import select
@@ -200,21 +205,21 @@ async def test_seed_then_api_returns_items(client, session):
     assert resp.json()["data"]["items"]
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd backend; python -m pytest tests/test_devseed.py -q`
 Expected: FAIL（`ModuleNotFoundError: app.devseed`）。
 
-- [ ] **Step 3: 实现 `app/devseed.py`**：读 `locations.json` → `Location(id, name, is_country, country_code)` 列表 → `upsert_all(session, Location, rows, "id")`；读 `ranking_clans.json` 的 `items` → `await replace_rankings(session, RankingKind.clans, location_id, None, None, items)`；`location_id` 缺省用 `32000001`；`await session.commit()`。
+- [x] **Step 3: 实现 `app/devseed.py`**：读 `locations.json` → `Location(id, name, is_country, country_code)` 列表 → `upsert_all(session, Location, rows, "id")`；读 `ranking_clans.json` 的 `items` → `await replace_rankings(session, RankingKind.clans, location_id, None, None, items)`；`location_id` 缺省用 `32000001`；`await session.commit()`。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `cd backend; python -m pytest tests/test_devseed.py -q`
 Expected: PASS。
 
-- [ ] **Step 5: 给 `app/cli.py` 加子命令**：`seed-dev-rankings`（参数 `--location` 默认 `32000001`），`main()` 里 `asyncio.run` 调 `seed_dev_rankings`（自建 session，参照 `_import_with_own_session` 的写法），打印 `counts`。
+- [x] **Step 5: 给 `app/cli.py` 加子命令**：`seed-dev-rankings`（参数 `--location` 默认 `32000001`），`main()` 里 `asyncio.run` 调 `seed_dev_rankings`（自建 session，参照 `_import_with_own_session` 的写法），打印 `counts`。
 
-- [ ] **Step 6: 验证 CLI + Commit**
+- [x] **Step 6: 验证 CLI + Commit**
 
 Run: `cd backend; python -m app.cli seed-dev-rankings`（需 `.env`）
 Expected: 打印写入条数且 > 0。
@@ -239,7 +244,7 @@ git commit -m "feat: 新增 seed-dev-rankings 命令灌入榜单夹具数据"
 **Interfaces:**
 - Produces: 可构建的 Vue3 应用；路由名 `query`(`/`)、`player`(`/players/:tag`)、`clan`(`/clans/:tag`)、`rankings`(`/rankings`)；`MainLayout` 左侧导航仅「查询」「排行榜」。
 
-- [ ] **Step 1: 初始化工程**（`npm create vite@latest frontend -- --template vue-ts`），装依赖：
+- [x] **Step 1: 初始化工程**（`npm create vite@latest frontend -- --template vue-ts`），装依赖：
 
 ```bash
 cd frontend
@@ -247,9 +252,9 @@ npm i vue-router pinia element-plus axios
 npm i -D vitest @vue/test-utils jsdom @vitejs/plugin-vue typescript
 ```
 
-- [ ] **Step 2: 配置 `vite.config.ts`**：`plugins:[vue()]`；`server.proxy = { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true } }`；`test: { environment: 'jsdom', globals: true }`；`package.json` 脚本加 `"test": "vitest run"`。
+- [x] **Step 2: 配置 `vite.config.ts`**：`plugins:[vue()]`；`server.proxy = { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true } }`；`test: { environment: 'jsdom', globals: true }`；`package.json` 脚本加 `"test": "vitest run"`。
 
-- [ ] **Step 3: 写失败测试 `src/layouts/MainLayout.spec.ts`**
+- [x] **Step 3: 写失败测试 `src/layouts/MainLayout.spec.ts`**
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -274,16 +279,16 @@ describe('MainLayout', () => {
 })
 ```
 
-- [ ] **Step 4: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
+- [x] **Step 4: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
 
-- [ ] **Step 5: 实现 `MainLayout.vue`**（Element Plus `el-container` + `el-aside`（`el-menu` 两项）+ `el-main` 内 `<router-view/>`）、`router/index.ts`（上述 4 条路由，先指向占位组件，Task 7/8 替换）、`main.ts`（挂 `router`、`pinia`、`ElementPlus`、`styles/main.css`）。
+- [x] **Step 5: 实现 `MainLayout.vue`**（Element Plus `el-container` + `el-aside`（`el-menu` 两项）+ `el-main` 内 `<router-view/>`）、`router/index.ts`（上述 4 条路由，先指向占位组件，Task 7/8 替换）、`main.ts`（挂 `router`、`pinia`、`ElementPlus`、`styles/main.css`）。
 
-- [ ] **Step 6: 运行确认通过 + 构建**
+- [x] **Step 6: 运行确认通过 + 构建**
 
 Run: `cd frontend; npm run test; npm run build`
 Expected: 测试 PASS，`build` 产出 `dist/`。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend
@@ -307,7 +312,7 @@ git commit -m "feat: 建立 Vue3+ElementPlus 前端脚手架与两项导航"
   - `class ApiError extends Error { code: string; status: number }`
   - `async function request<T>(path: string, opts?: { method?: 'GET'|'POST'; params?: Record<string, unknown>; data?: unknown }): Promise<Envelope<T>>`
 
-- [ ] **Step 1: 写失败测试 `src/api/request.spec.ts`**（用 `axios-mock-adapter` 或直接 `vi.mock('axios')`；以下断言是契约核心）
+- [x] **Step 1: 写失败测试 `src/api/request.spec.ts`**（用 `axios-mock-adapter` 或直接 `vi.mock('axios')`；以下断言是契约核心）
 
 ```ts
 // 1) 成功：meta 蛇形转驼峰，data 透传
@@ -322,13 +327,13 @@ git commit -m "feat: 建立 Vue3+ElementPlus 前端脚手架与两项导航"
 // 8) 网络失败 -> NETWORK_ERROR, status 0
 ```
 
-- [ ] **Step 2: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
+- [x] **Step 2: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
 
-- [ ] **Step 3: 实现 `request.ts`/`types.ts`**：axios 实例 `baseURL: import.meta.env.VITE_API_BASE || ''`；成功分支**先**判 body 是非 null 非数组对象、再判 `meta != null`，否则 `throw new ApiError('BAD_RESPONSE', ..., status)`；`toCamelMeta` 用 `=== undefined ? null : v`（**不可**用 `v || null`）；错误分支优先透传 `body.error.code`（须为非空字符串），否则按 status 归一；catch 网络错误 → `ApiError('NETWORK_ERROR', ..., 0)`。**不特判 STALE。**
+- [x] **Step 3: 实现 `request.ts`/`types.ts`**：axios 实例 `baseURL: import.meta.env.VITE_API_BASE || ''`；成功分支**先**判 body 是非 null 非数组对象、再判 `meta != null`，否则 `throw new ApiError('BAD_RESPONSE', ..., status)`；`toCamelMeta` 用 `=== undefined ? null : v`（**不可**用 `v || null`）；错误分支优先透传 `body.error.code`（须为非空字符串），否则按 status 归一；catch 网络错误 → `ApiError('NETWORK_ERROR', ..., 0)`。**不特判 STALE。**
 
-- [ ] **Step 4: 运行确认通过**：Run `cd frontend; npm run test` → PASS。
+- [x] **Step 4: 运行确认通过**：Run `cd frontend; npm run test` → PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/api
@@ -347,7 +352,7 @@ git commit -m "feat: 前端 API 客户端，移植信封与错误码契约"
 - Consumes: `..\COC\utils\format.js`（行为契约）。
 - Produces: `formatNumber(n): string`、`formatCompact(n): string`、`formatRelativeTime(iso, nowMs): string`、`normalizeTag(input): string | null`、`enumLabel(group, value): string`。
 
-- [ ] **Step 1: 写失败测试 `src/utils/format.spec.ts`**
+- [x] **Step 1: 写失败测试 `src/utils/format.spec.ts`**
 
 ```ts
 // formatNumber: null/undefined/NaN/boolean/'' -> '-'; 12345 -> '12,345'
@@ -358,13 +363,13 @@ git commit -m "feat: 前端 API 客户端，移植信封与错误码契约"
 // formatRelativeTime: now-30s -> '刚刚'; 未来时间 -> '刚刚'
 ```
 
-- [ ] **Step 2: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
+- [x] **Step 2: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
 
-- [ ] **Step 3: 实现 `format.ts`**：逐函数移植 `..\COC\utils\format.js` 的算法（`toFiniteNumber`、`expandExponential`、`groupThousands`、`oneDecimal` 的两分支去尾零、`TAG_RE=/^[0-9A-Z]{3,10}$/`、`ENUM_LABELS` 表），加 TS 类型。
+- [x] **Step 3: 实现 `format.ts`**：逐函数移植 `..\COC\utils\format.js` 的算法（`toFiniteNumber`、`expandExponential`、`groupThousands`、`oneDecimal` 的两分支去尾零、`TAG_RE=/^[0-9A-Z]{3,10}$/`、`ENUM_LABELS` 表），加 TS 类型。
 
-- [ ] **Step 4: 运行确认通过**：Run `cd frontend; npm run test` → PASS。
+- [x] **Step 4: 运行确认通过**：Run `cd frontend; npm run test` → PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/utils
@@ -386,14 +391,14 @@ git commit -m "feat: 移植前端格式化工具（含大数防护与 tag 归一
 - Consumes: `request<T>`（Task 5）、`normalizeTag`/`formatNumber`/`formatCompact`/`enumLabel`（Task 6）、后端 `GET /api/v1/players/{tag}`、`GET /api/v1/clans/{tag}`。
 - Produces: `getPlayer(tag)`, `getClan(tag)`、`getLocations()`, `getRankings(kind, locationId, page, pageSize)`（最后一个给 Task 8）、`ApiError` 驱动的统一错误卡片。
 
-- [ ] **Step 1: 写失败测试 `src/components/TagInput.spec.ts`**
+- [x] **Step 1: 写失败测试 `src/components/TagInput.spec.ts`**
 
 ```ts
 // 输入 '＃8qu8j9j' 点查询 -> emit('submit', '#8QU8J9J')
 // 输入 'abc' -> 不 emit，显示校验提示（不构造注定 400 的请求）
 ```
 
-- [ ] **Step 2: 写失败测试 `src/pages/PlayerDetail.spec.ts`**（mock `endpoints.ts`）
+- [x] **Step 2: 写失败测试 `src/pages/PlayerDetail.spec.ts`**（mock `endpoints.ts`）
 
 ```ts
 // 成功: 渲染 name/tag；带上 meta.cache
@@ -402,13 +407,13 @@ git commit -m "feat: 移植前端格式化工具（含大数防护与 tag 归一
 // BAD_RESPONSE: 渲染 ErrorCard（不白屏）
 ```
 
-- [ ] **Step 3: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
+- [x] **Step 3: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
 
-- [ ] **Step 4: 实现**：`endpoints.ts`（typed 调用，tag 用 `encodeURIComponent`）；`TagInput.vue`（用 `normalizeTag` 校验后 `emit('submit', tag)`）；`ErrorCard.vue`（按 `ApiError.code` 给中文文案 + 重试按钮）；玩家详情用 `el-descriptions` + `formatNumber`；部落详情同构（可复用 `StatGrid.vue`）；`router/index.ts` 接真实页面。
+- [x] **Step 4: 实现**：`endpoints.ts`（typed 调用，tag 用 `encodeURIComponent`）；`TagInput.vue`（用 `normalizeTag` 校验后 `emit('submit', tag)`）；`ErrorCard.vue`（按 `ApiError.code` 给中文文案 + 重试按钮）；玩家详情用 `el-descriptions` + `formatNumber`；部落详情同构（可复用 `StatGrid.vue`）；`router/index.ts` 接真实页面。
 
-- [ ] **Step 5: 运行确认通过 + 构建**：Run `cd frontend; npm run test; npm run build` → PASS。
+- [x] **Step 5: 运行确认通过 + 构建**：Run `cd frontend; npm run test; npm run build` → PASS。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src
@@ -429,7 +434,7 @@ git commit -m "feat: 查询首页、玩家详情、部落详情页（含错误�
 - Consumes: `getLocations()`、`getRankings(kind, locationId, page, pageSize)`（Task 7）、后端 `GET /api/v1/locations`、`GET /api/v1/rankings/{clans|players|capitals|clans_builder_base|players_builder_base}`。
 - Produces: 可切地区与榜单类型的排行榜表。
 
-- [ ] **Step 1: 写失败测试 `src/pages/Rankings.spec.ts`**（mock `endpoints.ts`）
+- [x] **Step 1: 写失败测试 `src/pages/Rankings.spec.ts`**（mock `endpoints.ts`）
 
 ```ts
 // 初始加载地区列表，默认选中夹具中的国家地区（如 China/32000001）
@@ -438,13 +443,13 @@ git commit -m "feat: 查询首页、玩家详情、部落详情页（含错误�
 // page_size 传 100（>50）-> 不报错；表格按后端返回渲染（后端会截断为 50）
 ```
 
-- [ ] **Step 2: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
+- [x] **Step 2: 运行确认失败**：Run `cd frontend; npm run test` → FAIL。
 
-- [ ] **Step 3: 实现 `Rankings.vue` + `RankingTable.vue`**：`el-select`（地区）+ `el-radio-group`（榜单类型）+ `el-table` + `el-pagination`（`page-size` 默认 20，最大 50）。
+- [x] **Step 3: 实现 `Rankings.vue` + `RankingTable.vue`**：`el-select`（地区）+ `el-radio-group`（榜单类型）+ `el-table` + `el-pagination`（`page-size` 默认 20，最大 50）。
 
-- [ ] **Step 4: 运行确认通过 + 构建**：Run `cd frontend; npm run test; npm run build` → PASS。
+- [x] **Step 4: 运行确认通过 + 构建**：Run `cd frontend; npm run test; npm run build` → PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src
@@ -461,7 +466,7 @@ git commit -m "feat: 排行榜页面（地区+榜单类型切换）"
 - Consumes: Task 1–8 全部产物；本地 PG、后端、Vite。
 - Produces: 一份「本机手测通过」的结论（写进 Task 11 的 README）。
 
-- [ ] **Step 1: 起三项**（分别后台起）
+- [x] **Step 1: 起三项**（分别后台起）
 
 ```powershell
 C:\pgportable\pgsql\bin\pg_isready.exe -h 127.0.0.1 -p 5433 -U postgres   # PG 就绪
@@ -471,16 +476,16 @@ cd backend; python -m uvicorn app.main:app --reload --port 8000
 cd frontend; npm run dev
 ```
 
-- [ ] **Step 2: 后端自检**
+- [x] **Step 2: 后端自检**
 
 Run: `curl.exe http://127.0.0.1:8000/healthz`；`curl.exe "http://127.0.0.1:8000/api/v1/players/%239QJ8L0"`
 Expected: 200；玩家 payload 的 `data.tag` 形如 `#...`，`meta.cache` ∈ {MISS,HIT}。
 
-- [ ] **Step 3: 浏览器手测**（`http://localhost:5173`）
+- [ ] **Step 3: 浏览器手测**（`http://localhost:5173`）—— ⚠️ **本机未完成**：桌面浏览器被系统级 AdGuard 过滤，子资源 502/被截断，页面渲染不出来（详见文末「联调记录 → 未完成项」）。换机器或临时关掉 AdGuard 补跑。
 
 逐项确认：查询首页输入合法 tag 跳详情；非法 tag 就地提示；玩家/部落详情渲染数值（千分位）；排行榜默认地区出数据、切 kind 正常；把后端停掉后页面出**错误卡片且可重试**（不白屏）。
 
-- [ ] **Step 4: 记录 + Commit**
+- [x] **Step 4: 记录 + Commit**
 
 把「联调步骤与结论」写入 `docs/superpowers/plans/2026-10-16-cocpersonal-mvp.md` 末尾的「联调记录」小节点（或 README），提交。
 
@@ -504,7 +509,7 @@ git commit -m "chore: 记录本地端到端联调结果"
 - Consumes: `frontend/`（`npm run build` → `dist/`）、`backend/Dockerfile`（镜像 `api`）、`backend/deploy/backup.sh`（可选运维参考）。
 - Produces: 单机三容器栈：`web`（对外 80）+ `api`（`:8000` 内部）+ `postgres`。
 
-- [ ] **Step 1: 写 `frontend/Dockerfile`**（多阶段）
+- [x] **Step 1: 写 `frontend/Dockerfile`**（多阶段）
 
 ```dockerfile
 FROM node:22-alpine AS build
@@ -519,18 +524,18 @@ COPY --from=build /app/dist /usr/share/nginx/html
 ```
 （`deploy/nginx.conf` 由 compose 挂载到 `/etc/nginx/conf.d/default.conf`。）
 
-- [ ] **Step 2: 写 `deploy/nginx.conf`（HTTP-only，默认）**：`location / { root /usr/share/nginx/html; try_files $uri $uri/ /index.html; }`；`location /api/ { proxy_pass http://api:8000; }`；`/admin/`、`/media/`（alias + `autoindex off`）、`/healthz`、`/readyz`（`access_log off`）；**透传 `X-Forwarded-For`**；文件末尾保留注释版 `443 ssl` server 段作为 HTTPS 开关参考。
+- [x] **Step 2: 写 `deploy/nginx.conf`（HTTP-only，默认）**：`location / { root /usr/share/nginx/html; try_files $uri $uri/ /index.html; }`；`location /api/ { proxy_pass http://api:8000; }`；`/admin/`、`/media/`（alias + `autoindex off`）、`/healthz`、`/readyz`（`access_log off`）；**透传 `X-Forwarded-For`**；文件末尾保留注释版 `443 ssl` server 段作为 HTTPS 开关参考。
 
-- [ ] **Step 3: 写根 `docker-compose.yml`**：`postgres`（`postgres:16-alpine`，卷 `pgdata`，healthcheck `pg_isready`）；`api`（`build: ./backend`，`depends_on` postgres healthy，环境同 COCBack 的 `api`，`APP_ROLE=all`）；`web`（`build: ./frontend`，`ports: ["80:80"]`，挂载 `./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro`，`depends_on: [api]`）。**只有 web 映射端口。**
+- [x] **Step 3: 写根 `docker-compose.yml`**：`postgres`（`postgres:16-alpine`，卷 `pgdata`，healthcheck `pg_isready`）；`api`（`build: ./backend`，`depends_on` postgres healthy，环境同 COCBack 的 `api`，`APP_ROLE=all`）；`web`（`build: ./frontend`，`ports: ["80:80"]`，挂载 `./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro`，`depends_on: [api]`）。**只有 web 映射端口。**
 
-- [ ] **Step 4: 写根 `.env.example`**：`POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD/COC_API_TOKEN/COC_BASE_URL/APP_ROLE/ADMIN_USERNAME/ADMIN_PASSWORD/ADMIN_SECRET_KEY/PUBLIC_BASE_URL/RATE_LIMIT_PER_MINUTE` 占位（值留空）。
+- [x] **Step 4: 写根 `.env.example`**：`POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD/COC_API_TOKEN/COC_BASE_URL/APP_ROLE/ADMIN_USERNAME/ADMIN_PASSWORD/ADMIN_SECRET_KEY/PUBLIC_BASE_URL/RATE_LIMIT_PER_MINUTE` 占位（值留空）。
 
-- [ ] **Step 5: 校验**
+- [ ] **Step 5: 校验** —— ⚠️ **本机改用静态校验代替**：Docker 不可用，跑不了 `docker compose config`；改用一个临时 Python 脚本做 69 项结构断言（服务集合、仅 web 暴露端口、卷与挂载、变量插值、nginx location 齐备等），全过。
 
 Run: `docker compose config`（本机若 Docker 不可用，逐行人工核对服务名/卷/端口/环境变量）
 Expected: 配置无语法错误，服务为 `postgres`/`api`/`web`。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/Dockerfile deploy/nginx.conf docker-compose.yml .env.example
@@ -549,13 +554,13 @@ git commit -m "feat: 组合部署资产（nginx 托管 SPA + 反代 api + compos
 - Consumes: 前 10 个任务的产物与 Task 9 的联调结论。
 - Produces: 面向新人的开发/构建/部署说明。
 
-- [ ] **Step 1: 写根 `README.md`**：项目简介；结构（`backend/`、`frontend/`、`deploy/`）；**本地开发**（起 PG → 后端 `.env` + `seed-dev-rankings` + uvicorn → 前端 `npm i && npm run dev` → 浏览器 `:5173`）；**构建**（`npm run build`、`pytest`）；**部署**（`cp .env.example .env` 填必填项 → `docker compose up -d --build`）；HTTPS 开关说明；夹具数据说明（`_source`/`_todo`）。
+- [x] **Step 1: 写根 `README.md`**：项目简介；结构（`backend/`、`frontend/`、`deploy/`）；**本地开发**（起 PG → 后端 `.env` + `seed-dev-rankings` + uvicorn → 前端 `npm i && npm run dev` → 浏览器 `:5173`）；**构建**（`npm run build`、`pytest`）；**部署**（`cp .env.example .env` 填必填项 → `docker compose up -d --build`）；HTTPS 开关说明；夹具数据说明（`_source`/`_todo`）。
 
-- [ ] **Step 2: 更新根 `AGENTS.md`**：把「待补充」替换为真实命令与结构；保留「每次修改及时提交本地 git」；补后端硬约束引用（指向 `backend/AGENTS.md`）与前端命令。
+- [x] **Step 2: 更新根 `AGENTS.md`**：把「待补充」替换为真实命令与结构；保留「每次修改及时提交本地 git」；补后端硬约束引用（指向 `backend/AGENTS.md`）与前端命令。
 
-- [ ] **Step 3: 校验链接与命令**：按 README 逐条命令核对路径存在（不实际起 Docker）。
+- [x] **Step 3: 校验链接与命令**：按 README 逐条命令核对路径存在（不实际起 Docker）。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md AGENTS.md
