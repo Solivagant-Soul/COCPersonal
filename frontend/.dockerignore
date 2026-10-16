@@ -1,0 +1,7 @@
+# 构建上下文里唯一需要的是源码与 package*.json。
+# 不排掉 node_modules 的话，COPY . . 会把宿主机的依赖（Windows 二进制、
+# 几百 MB）灌进 Linux 镜像，再被 npm ci 覆盖 —— 又慢又容易出玄学错误。
+node_modules
+dist
+.vscode
+*.log
