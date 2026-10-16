@@ -32,6 +32,7 @@ from app.api.routes import (
     upgrade,
 )
 from app.coc.client import CocClient
+from app.coc.devfixtures import FixtureTransport, is_placeholder_token
 from app.coc.errors import CocError
 from app.coc.ratelimit import MemoryRateLimiter
 from app.collector.scheduler import build_scheduler, register_jobs
@@ -53,13 +54,23 @@ def _error_json(status: int, code: str, message: str) -> JSONResponse:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    # 没有真实 Token 时给 client 注入夹具上游（开发期；见 app/coc/devfixtures.py）。
+    # 走的是同一个 CocClient，只是最底层的字节来源换成 tests/fixtures。
+    transport = (
+        FixtureTransport() if is_placeholder_token(settings.coc_api_token) else None
+    )
     app.state.coc_client = CocClient(
-        settings.coc_api_token,
+        settings.coc_api_token or "PLACEHOLDER",
         MemoryRateLimiter(rate=settings.coc_rate_limit),
         timeout=settings.coc_timeout,
         base_url=settings.coc_base_url,
+        transport=transport,
     )
-    logger.info("CocClient ready (rate=%s/s)", settings.coc_rate_limit)
+    logger.info(
+        "CocClient ready (rate=%s/s, upstream=%s)",
+        settings.coc_rate_limit,
+        "fixtures" if transport is not None else "official",
+    )
     # 采集调度器。同进程起（单进程一体，AGENTS.md），角色决定要不要起。
     collector = build_scheduler(settings)
     app.state.collector = collector
