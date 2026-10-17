@@ -1,9 +1,11 @@
 # COCPersonal MVP 实施计划
 
-> **状态：11 / 11 任务全部完成并已提交**（2026-10-17，`main` 分支，`0b56079` … `2e47911`）。
-> 本机可做的验证都做了：后端 494 passed、前端 32 passed、`npm run build` 通过、真实进程
-> HTTP 端到端通过。**两项本机做不到**（浏览器 DOM 手测、`docker compose up`）已在文末
-> 「联调记录 → 未完成项」写明原因与补做方式 —— 别把「全绿」当成「全好」。
+> **状态：11 / 11 任务全部完成并已提交**（2026-10-17，`main` 分支，自 `0b56079` 起）。
+> 本机可做的验证都做了：后端 501 passed、前端 36 passed、`npm run build` 通过、真实进程
+> HTTP 端到端通过，**浏览器 DOM 手测也已补做通过**（Task 9 Step 3 原先被 AdGuard 阻断，
+> 已重跑；并在那次手测中揪出一个缓存缺陷并修掉，见「联调记录 → 三处后端潜伏缺陷」）。
+> **只剩一项本机做不到**（`docker compose up`）—— 原因与补做方式见文末「联调记录 →
+> 未完成项」——别把「全绿」当成「全好」。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -481,9 +483,21 @@ cd frontend; npm run dev
 Run: `curl.exe http://127.0.0.1:8000/healthz`；`curl.exe "http://127.0.0.1:8000/api/v1/players/%239QJ8L0"`
 Expected: 200；玩家 payload 的 `data.tag` 形如 `#...`，`meta.cache` ∈ {MISS,HIT}。
 
-- [ ] **Step 3: 浏览器手测**（`http://localhost:5173`）—— ⚠️ **本机未完成**：桌面浏览器被系统级 AdGuard 过滤，子资源 502/被截断，页面渲染不出来（详见文末「联调记录 → 未完成项」）。换机器或临时关掉 AdGuard 补跑。
+- [x] **Step 3: 浏览器手测**（`http://localhost:5173`）—— **已补做通过**（2026-10-17）。首次被系统级 AdGuard 阻断（子资源 502、`#app` 为空），重跑时该拦截未再出现，逐项实测如下：
 
-逐项确认：查询首页输入合法 tag 跳详情；非法 tag 就地提示；玩家/部落详情渲染数值（千分位）；排行榜默认地区出数据、切 kind 正常；把后端停掉后页面出**错误卡片且可重试**（不白屏）。
+| 手测项 | 结果 |
+| --- | --- |
+| 首页渲染 | 侧边栏只有「查询」「排行榜」；标题 `查询 · COC 助手` |
+| 点快捷链接 `#9QJ8L0（玩家）` | 跳 `/players/%239QJ8L0`，渲染 Vasilije / 等级 205 / 奖杯 **4,902**（千分位生效）/ 大本营 16 / 部落角色 首领 |
+| 输入框输入 `8qu8j9j` + **回车** | `normalizeTag` 补 `#` 并转大写 → 跳 `/players/%238QU8J9J`，`GET /api/v1/players/%238QU8J9J` 返回 **200**（Vite `/api` 代理链路通） |
+| 输入 `ab` + 回车 | **就地提示**「标签格式不对：应为 3-10 位字母数字（如 #8QU8J9J）」，URL 不变（不构造注定 400 的请求） |
+| 部落详情 `/clans/%232PP` | Reddit Zulu / 部落等级 18 / 部落积分 **55,406** / 成员 44 / 战争胜场 402 / 开战频率 始终开战 |
+| 排行榜 | 表格 3 行（Reddit Zulu #2PP、Sinai #8QU8J9J、Nova China #9GP0CV9）、`Total 3`、菜单高亮「排行榜」 |
+| 手改地址 `/no-such-page` | 404 兜底页：显示该地址 + 「回到查询」按钮，**不是空白 router-view** |
+| 同一资源二次加载 | `meta.cache` 由 `MISS` 变 **`HIT`**（见下方第 3 处缺陷） |
+
+顺带补的收尾（见 `ee9884a`）：`index.html` 的 `lang=en`/`title=frontend` 脚手架残留、路由级
+`document.title`、404 兜底页、品牌 favicon、`frontend/README.md`。
 
 - [x] **Step 4: 记录 + Commit**
 
@@ -571,7 +585,7 @@ git commit -m "docs: 补齐开发/构建/部署说明并更新 AGENTS.md"
 
 ## 联调记录
 
-**日期**：2026-10-16 / 17（本机 Windows）。**结论**：后端 HTTP 端到端**通过**；前端由组件测试 + 生产构建覆盖；**浏览器 DOM 手测在本机被环境阻断**（见「未完成项」）。
+**日期**：2026-10-16 / 17（本机 Windows）。**结论**：后端 HTTP 端到端**通过**；前端组件测试与生产构建通过，**浏览器 DOM 手测也已补做通过**（Task 9 Step 3），而且正是那次手测揪出了一处缓存缺陷并修掉（见下「三处后端潜伏缺陷」第 3 条）。**只剩 `docker compose up` 从未在本机跑过**（见「未完成项」）。
 
 ### 起服务（本机 Windows）
 
@@ -594,6 +608,10 @@ cd frontend; npm run dev                                  # http://localhost:517
 | `GET /healthz` | 200 `{"status":"ok"}` |
 | `GET /readyz` | 200 `{"status":"ready"}` |
 | `GET /api/v1/players/%239QJ8L0` | 200，`data.tag=#9QJ8L0`、`name=Vasilije`、`trophies=4902`，`meta.cache=MISS` |
+| 同上，紧接第二次 | 200，`meta.cache=**HIT**`、`age_seconds=0`（修复前恒为 MISS，见第 3 处缺陷） |
+| `GET /api/v1/clans/%232PP` 两次 | 200 / 200，`MISS` → **`HIT`** |
+| `GET /api/v1/clans/%232PP/members`、`/currentwar` 各两次 | 200，第二次均 **`HIT`** |
+| 浏览器手测（`:5173`，真实点击 + 真实按键） | 见 Task 9 Step 3 的 8 项表格，全过 |
 | `GET /api/v1/clans/%232PP` | 200，`data.name=Reddit Zulu`、`members=44` |
 | `GET /api/v1/locations` | 200，`total=2`，首个为 `China(32000001)` |
 | `GET /api/v1/rankings/clans?locationId=32000001` | 200，`total=3`，`meta.cache=HIT`（种子数据） |
@@ -601,12 +619,12 @@ cd frontend; npm run dev                                  # http://localhost:517
 | `GET /api/v1/players/ab` | 400，错误体 `{"error":{"code":"INVALID_TAG","message":...,"upstream_reason":null}}` |
 | 经 Vite(5173) 反代 `/api/v1/locations` | 200，信封与直连一致（证明 `/api` 代理链路通） |
 | `vite preview`(4173) 产物 | `index.html` 944B、入口 bundle 1,010,682B、经其反代 `/api/v1/rankings/clans` 200 |
-| 前端测试 `npm run test` | **32 passed**（信封/错误码/STALE/tag 归一化/大数防塌/榜单切换/空态/page_size>50） |
+| 前端测试 `npm run test` | **36 passed**（信封/错误码/STALE/tag 归一化/大数防塌/榜单切换/空态/page_size>50/路由标题/404 兜底页） |
 | 前端构建 `npm run build` | exit 0 |
 
-### 联调中发现并修复的两处后端潜伏缺陷
+### 联调中发现并修复的三处后端潜伏缺陷
 
-测试全绿并不等于「跑起来是好的」——这两处都只有**真实进程**才会暴露：
+测试全绿并不等于「跑起来是好的」——这三处都只有**真实进程 / 真实浏览器**才会暴露：
 
 1. **`uvicorn app.main:app` 根本起不来**。文档与 `backend/Dockerfile` 的 `CMD` 都写这个入口，
    但 `app/main.py` 只有 `create_app()` 工厂、**从无模块级 `app`**。测试只调 `create_app()`，
@@ -618,16 +636,40 @@ cd frontend; npm run dev                                  # http://localhost:517
    → `app/db/session.py` 新增 `new_session()`（直接产出 `AsyncSession`，调用方负责 close），
    替换 `_common.py` / `rankings.py` / `content.py` / `submissions.py` / `upgrade.py` 五处。
    修后重启，6 个真实请求全 200，日志中该异常计数 **0**；全量 494 测试仍全绿。
+3. **详情路由的读时缓存永不命中 —— TTL 形同虚设**（浏览器手测时发现：同一部落刷两次，
+   「缓存状态」一直是 `MISS`）。`app/cache/readthrough.py` 取新鲜度用的是
+   `getattr(value, "fetched_at", None)`（只认**属性**），而六个真实 loader 返回的是一层
+   **dict**：`{"_row": ..., "fetched_at": ...}`（clans / players / currentwar / cwl）与
+   `{"_items": ..., "_fetched_at": ...}`（members / warlog）。dict 没有那个属性 → 新鲜度
+   恒被当成「无从判断」→ **每个详情请求都判过期、都回源**，`meta.cache` 永远是 `MISS`。
+   真实 Token 下等于每个详情/成员/战报请求都白打一次官方（走 RoyaleAPI 免费代理时还白挤
+   共享配额），而库里明明躺着 300s / 120s TTL 内的新鲜数据。
+   **为什么 494 个测试全绿仍是漏网**：单元测试的 loader 返回的是 **ORM 行对象**（属性形状），
+   与生产的 dict 形状不是一回事；API 层断言又只写 `cache in {"HIT", "MISS"}`，正好放过 MISS。
+   → `_fetched_at_of` 改为同时认 `Mapping`（键 `fetched_at` 与 `_fetched_at`）；新增 7 条测试
+   （3 条单元：两种 dict 形状必须 HIT + 没有新鲜度键时仍须回源；4 条 API：clans / players /
+   members / currentwar 的第二次请求必须 `HIT` 且不再回源）。
+   **裁定**：`test_warlog.py::test_currentwar_not_in_war_does_not_degrade` 的前提被此修复推翻
+   —— 它原先靠「缓存永远 MISS」才拿到 404，现在 TTL(120s) 内的行会合法 HIT 并返回 200。
+   该用例改为先把行时间戳推到 TTL 之外再断言 404（与 warlog 那条孪生用例同构），并新增一条
+   `currentwar` HIT 用例，把「命中缓存会在 TTL 内暂时掩盖 `NotInWar`」写成**显式契约**
+   —— 这是缓存的本义，不是降级。修后 494 → **501 passed**，HTTP 复验四项均 `MISS` → `HIT`。
 
 ### 未完成项（本机环境阻断，非代码问题）
 
-- **浏览器 DOM 冒烟未做**：本机桌面浏览器被**系统级 AdGuard** 过滤（`local.adguard.org`）。
-  它会给页面注入脚本，并在模块请求上返回 **502 Bad Gateway** /
-  `ERR_INCOMPLETE_CHUNKED_ENCODING`（连 curl 拿到的 HTML 里也被注入了它的 `<script>`）。
-  因此在浏览器里 `#app` 始终为空——`/src/main.ts`、`element-plus.js`、`App.vue` 等
-  子资源被 AdGuard 拦掉。换 `localhost`、换 `vite preview` 的单个 bundle 都一样。
-  **代码侧证据**：同一批静态资源用 curl 取是完整的（入口 bundle 1,010,682B，未截断）。
-  在未装 AdGuard 的机器（或临时关闭它）上重跑本节点即可补上这一条。
+- **`docker compose up` 从未在本机跑过**：本机 CPU 虚拟化在固件层关闭，Docker Desktop / WSL2
+  都不可用（见 Task 10 Step 5），部署资产只做到静态校验（69 项结构断言）。**第一次真实 `up`
+  必须在 Linux 机器上做**：`cp .env.example .env`（填 `POSTGRES_PASSWORD` / `ADMIN_*` /
+  `PUBLIC_BASE_URL`）→ `docker compose up -d --build` → `docker compose exec api alembic upgrade head`
+  → `python -m app.cli import-game-data`（应产出 2073 行）→ 可选 `seed-dev-rankings`。
+- ~~**浏览器 DOM 冒烟未做**~~ → **已补做通过**（2026-10-17，见 Task 9 Step 3 的 8 项表格）。
+  首次被阻断的原因仍是有用信息，记在这里以免下次误判成代码问题：本机桌面浏览器被**系统级
+  AdGuard** 过滤（`local.adguard.org`），它会往页面注入脚本，并对模块请求返回
+  **502 Bad Gateway** / `ERR_INCOMPLETE_CHUNKED_ENCODING`，于是 `#app` 始终为空；
+  同一批静态资源用 curl 取却是完整的（入口 bundle 1,010,682B，未截断）——是环境不是代码。
+  另外本机还有两个**与 AdGuard 无关**的坑：`vite` 只监听 IPv6 回环，`127.0.0.1:5173`
+  连不上，浏览器要用 **`http://localhost:5173`**；`Invoke-WebRequest` 会走系统代理被 AdGuard
+  拦，探活请用 `curl.exe --noproxy '*'`。
 - **夹具上游对任意 `/players/*` 都返回同一份样本**，所以本地**无法**触发
   「玩家不存在（404）」的真实路径；该分支由组件测试（mock）覆盖。
 
