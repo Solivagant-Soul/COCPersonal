@@ -208,6 +208,64 @@ async def test_upstream_reason_exposes_access_denied_invalid_ip(client, fake_coc
 
 
 # --------------------------------------------------------------------------- #
+# TTL 内命中缓存（loader 返回 dict 的协议）
+# --------------------------------------------------------------------------- #
+
+
+async def test_second_clan_request_hits_cache_and_skips_upstream(client, monkeypatch):
+    """TTL 内的第二次请求必须是 HIT，且不再打官方。
+
+    这条锁的是 loader ↔ read_through 的协议。loaders 返回的是 dict
+    （``{"_row": ..., "fetched_at": ...}``）而不是 ORM 对象；只按属性取新鲜度时
+    dict 永远查不到 fetched_at，于是每次都判定「无从判断新鲜度」→ 每次回源 →
+    详情路由的 TTL 完全失效。旧的断言只写了 ``cache in {"HIT", "MISS"}``，
+    正好放过了这个 bug。
+    """
+    calls = []
+
+    async def counting_stub(*a, **kw):
+        calls.append(1)
+        return CLAN_DETAIL
+
+    monkeypatch.setattr(clans_routes.coc, "get_clan", counting_stub)
+
+    first = await client.get("/api/v1/clans/%232PP")
+    second = await client.get("/api/v1/clans/%232PP")
+
+    assert first.json()["meta"]["cache"] == "MISS"
+    assert second.json()["meta"]["cache"] == "HIT"
+    assert len(calls) == 1, "TTL 内的第二次请求不该回源"
+
+    # HIT 也必须给出真实的 fetched_at / age_seconds，而不是一路 None
+    assert second.json()["meta"]["fetched_at"] is not None
+    assert second.json()["meta"]["age_seconds"] is not None
+    # 命中缓存的出参要能从库里拼回来（不是把 loader 的 dict 直接甩给前端）
+    assert second.json()["data"]["tag"] == "#2PP"
+    assert second.json()["data"]["name"] == "Reddit Zulu"
+    assert second.json()["data"]["members"] == 44
+
+
+async def test_clan_members_second_request_hits_cache(client, monkeypatch):
+    """members 走 ``_fetched_at`` 键的 list 形状，同样必须命中。"""
+    calls = []
+
+    async def counting_stub(*a, **kw):
+        calls.append(1)
+        return {"items": CLAN_DETAIL["memberList"]}
+
+    monkeypatch.setattr(clans_routes.coc, "get_clan_members", counting_stub)
+
+    first = await client.get("/api/v1/clans/%232PP/members")
+    second = await client.get("/api/v1/clans/%232PP/members")
+
+    assert first.json()["meta"]["cache"] == "MISS"
+    assert second.json()["meta"]["cache"] == "HIT"
+    # fetcher 内部为建库还会额外拉一次不带 limit 的成员列表，故这里是 2 而不是 1
+    assert len(calls) == 2, "第二次请求不该再回源"
+    assert [m["tag"] for m in second.json()["data"]] == ["#9QJ8L0", "#8L9P2R"]
+
+
+# --------------------------------------------------------------------------- #
 # 分页（Review Focus 第 4 条）
 # --------------------------------------------------------------------------- #
 

@@ -137,6 +137,78 @@ async def test_hit_at_exactly_ttl_boundary(session):
 
 
 # --------------------------------------------------------------------------- #
+# HIT：loader 返回的是 dict，不是 ORM 对象
+#
+# 上面几条用的是 ORM 行对象，而**真实路由的 loader 一律返回 dict**：
+# ``{"_row": ..., "fetched_at": ...}``（clans / players / currentwar / cwl）与
+# ``{"_items": ..., "_fetched_at": ...}``（members / warlog）。
+# 之所以要包一层 dict：session 在 loader 里就关掉了，行会 detached，
+# 新鲜度得在关闭前抠出来；列表类响应还得同时带上分页后的 items。
+#
+# 这个形状一度没人覆盖 —— ``getattr(dict, "fetched_at")`` 永远返回 None，
+# 于是新鲜度恒为「无从判断」，**每个详情请求都回源**，TTL 完全失效。
+# 真实 Token 下这意味着白烧官方配额 + 每次都多一次上游往返。
+# --------------------------------------------------------------------------- #
+
+
+async def test_hit_when_loader_returns_mapping_with_fetched_at(session):
+    """clans / players / currentwar / cwl 的 loader 形状。"""
+    fresh_at = _now() - dt.timedelta(seconds=10)
+
+    async def loader():
+        return {"_row": _clan(fresh_at), "fetched_at": fresh_at}
+
+    async def fetcher():
+        raise AssertionError("形状正确时不该回源")
+
+    result = await read_through(
+        "clan", "#2PP", loader, _noop_persister, fetcher, session
+    )
+
+    assert result.status is CacheStatus.HIT
+    assert result.fetched_at == fresh_at
+    assert 5 <= result.age_seconds <= 20
+
+
+async def test_hit_when_loader_returns_mapping_with_underscore_fetched_at(session):
+    """members / warlog 的 loader 形状（键名多一个下划线）。"""
+    fresh_at = _now() - dt.timedelta(seconds=10)
+
+    async def loader():
+        return {"_items": [], "_fetched_at": fresh_at}
+
+    async def fetcher():
+        raise AssertionError("形状正确时不该回源")
+
+    result = await read_through(
+        "clan_members", "#2PP", loader, _noop_persister, fetcher, session
+    )
+
+    assert result.status is CacheStatus.HIT
+    assert result.fetched_at == fresh_at
+    assert 5 <= result.age_seconds <= 20
+
+
+async def test_mapping_without_freshness_key_still_refetches(session):
+    """dict 里没有新鲜度键时才该回源 —— 不能把"未知"当成"新鲜"。"""
+    calls = []
+
+    async def loader():
+        return {"_items": []}
+
+    async def fetcher():
+        calls.append("fetcher")
+        return {"_items": [1], "_fetched_at": _now()}
+
+    result = await read_through(
+        "clan_members", "#2PP", loader, _noop_persister, fetcher, session
+    )
+
+    assert result.status is CacheStatus.MISS
+    assert calls == ["fetcher"]
+
+
+# --------------------------------------------------------------------------- #
 # MISS
 # --------------------------------------------------------------------------- #
 

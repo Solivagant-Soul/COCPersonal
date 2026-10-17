@@ -76,6 +76,31 @@ async def test_player_not_found_returns_404_with_player_code(client, fake_coc):
     assert resp.json()["error"]["code"] == "PLAYER_NOT_FOUND"
 
 
+async def test_second_player_request_hits_cache_and_skips_upstream(client, monkeypatch):
+    """玩家详情同部落详情：TTL 内第二次请求必须 HIT 且不回源。
+
+    玩家路由的 loader 同样返回 dict（``{"_row": ..., "fetched_at": ...}``），
+    所以也踩过「属性 vs 映射」这个坑。
+    """
+    calls = []
+
+    async def counting_stub(*a, **kw):
+        calls.append(1)
+        return PLAYER_PROFILE
+
+    monkeypatch.setattr(players_routes.coc, "get_player", counting_stub)
+
+    first = await client.get("/api/v1/players/%239QJ8L0")
+    second = await client.get("/api/v1/players/%239QJ8L0")
+
+    assert first.json()["meta"]["cache"] == "MISS"
+    assert second.json()["meta"]["cache"] == "HIT"
+    assert len(calls) == 1, "TTL 内的第二次请求不该回源"
+    assert second.json()["meta"]["age_seconds"] is not None
+    assert second.json()["data"]["name"] == "Vasilije"
+    assert second.json()["data"]["expLevel"] == 205
+
+
 async def test_invalid_player_tag_returns_400(client):
     resp = await client.get("/api/v1/players/not-a-tag")
     assert resp.status_code == 400

@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC
 from enum import Enum
@@ -116,9 +117,27 @@ async def read_through[T](
 def _fetched_at_of(value: object) -> dt.datetime | None:
     """取对象的 ``fetched_at``。缺失或为 None 时返回 None。
 
-    用 getattr 而不是属性访问：loader 返回的可能是 ORM 实例、也可能是测试里的
-    轻量替身。缺字段时当作"无从判断新鲜度"，走上回源而不是假装新鲜。
+    **两种形状都要认**，因为 loader 的返回值有两种：
+
+    - **对象**（ORM 行、测试替身）：直接取 ``.fetched_at`` 属性。
+    - **映射**（真实路由的 loader）：``{"_row": ..., "fetched_at": ...}`` 或
+      ``{"_items": ..., "_fetched_at": ...}``。路由必须把行与新鲜度一起带出来
+      （loader 里 session 就关了，行会 detached），列表类还得带上分页后的 items，
+      所以包了一层；键名两种都有 —— ``fetched_at``（clans / players /
+      currentwar / cwl）与 ``_fetched_at``（members / warlog，与内部 ``_items`` 一致）。
+
+    只用 ``getattr`` 时映射恒返回 None（dict 没有这个属性）—— 新鲜度一律"无从判断"，
+    于是**每个详情请求都回源**、TTL 完全失效，真实 Token 下白烧官方配额。
+    这正是必须同时认两种形状的原因。
+
+    缺字段时当作"无从判断新鲜度"，走上回源而不是假装新鲜。
     """
+    if isinstance(value, Mapping):
+        for key in ("fetched_at", "_fetched_at"):
+            candidate = value.get(key)
+            if isinstance(candidate, dt.datetime):
+                return candidate
+        return None
     fetched_at = getattr(value, "fetched_at", None)
     return fetched_at if isinstance(fetched_at, dt.datetime) else None
 

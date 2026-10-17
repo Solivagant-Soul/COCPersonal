@@ -170,12 +170,23 @@ async def test_currentwar_not_in_war_returns_404_business_code(client, fake_coc)
     assert resp.json()["error"]["code"] == "CLAN_NOT_IN_WAR"
 
 
-async def test_currentwar_not_in_war_does_not_degrade(client, client2=None, **kw):
-    """不在战时即便库里有旧的当前战行，也必须冒泡。
+async def test_currentwar_not_in_war_does_not_degrade(client, session):
+    """不在战时即便库里有旧的当前战行，也必须冒泡 404，绝不降级为 STALE。
 
-    跑两个顺序：先回源成功（落库），再让官方说不在战 —— 若降级，第二次会返回旧行。
+    跑两个顺序：先回源成功（落库）→ 把该行时间戳**推到 TTL 之外** → 官方说不在战。
+    若实现降级，第二次会返回旧行 + 200。
+
+    中间「推过期」这一步不是装饰：这条规则约束的是**回源失败的那一刻**，而只有缓存
+    过期才会真的回源。库里若有 TTL（currentwar = 120s）内的新鲜行，请求本来就该命中
+    缓存、压根不碰官方 —— 见下面那条 ``test_currentwar_fresh_hit_...``。
     """
+    import datetime as dt
+    from datetime import UTC
+
+    from sqlalchemy import update
+
     from app.api.routes import clans as routes
+    from app.db.models import ClanWar
 
     # 第一次：官方有当前战，落库
     async def ok(*a, **kw):
@@ -186,17 +197,50 @@ async def test_currentwar_not_in_war_does_not_degrade(client, client2=None, **kw
     try:
         first = await client.get("/api/v1/clans/%232PP/currentwar")
         assert first.status_code == 200
+        assert first.json()["meta"]["cache"] == "MISS"
 
-        # 第二次：官方说不在战
+        await session.execute(
+            update(ClanWar)
+            .where(ClanWar.clan_tag == "#2PP")
+            .values(fetched_at=dt.datetime.now(UTC) - dt.timedelta(seconds=200))
+        )
+        await session.commit()
+
+        # 第二次：官方说不在战（业务错误）
         async def not_in_war(*a, **kw):
             raise NotInWar("未在战中")
 
         routes.coc.get_clan_currentwar = not_in_war
         second = await client.get("/api/v1/clans/%232PP/currentwar")
-        assert second.status_code == 404, "不在战必须冒泡 404"
+        assert second.status_code == 404, "不在战必须冒泡 404，不得降级为 200 + STALE"
         assert second.json()["error"]["code"] == "CLAN_NOT_IN_WAR"
     finally:
         routes.coc.get_clan_currentwar = original
+
+
+async def test_currentwar_fresh_hit_does_not_ask_upstream(client, monkeypatch):
+    """TTL 内的当前战命中缓存时，官方连问都不问。
+
+    这等于把「命中缓存会暂时掩盖 NotInWar」写成显式契约：部落刚打完仗、官方已经
+    报不在战，但库里那行还不到 120s 时，用户会继续看到上一场的数据。这不是 bug，
+    而是 TTL 表的应有之义（``app/cache/ttl.py``：currentwar=120s，战斗中才需要常回源）。
+    之所以单列一条：这个交互很容易被误当成"降级"，从而把缓存改回"永远回源"。
+    """
+    calls = []
+
+    async def counting_stub(*a, **kw):
+        calls.append(1)
+        return CURRENT_WAR_RESPONSE
+
+    monkeypatch.setattr(clans_routes.coc, "get_clan_currentwar", counting_stub)
+
+    first = await client.get("/api/v1/clans/%232PP/currentwar")
+    second = await client.get("/api/v1/clans/%232PP/currentwar")
+
+    assert first.json()["meta"]["cache"] == "MISS"
+    assert second.json()["meta"]["cache"] == "HIT"
+    assert len(calls) == 1, "TTL 内的第二次请求不该回源"
+    assert second.json()["data"]["state"] == "inBattle"
 
 
 # --------------------------------------------------------------------------- #
