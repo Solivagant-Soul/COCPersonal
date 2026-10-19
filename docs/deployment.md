@@ -1,0 +1,338 @@
+# COCPersonal 部署文档（Docker Compose，Linux 单机）
+
+> 适用对象：在一台**全新的 Linux 服务器**上，把 `web`(nginx) + `api`(FastAPI) +
+> `postgres` 三容器栈从零跑到「浏览器能查玩家/部落、能看排行榜、能进后台」。
+>
+> ⚠️ **诚实声明（必读）**：本仓库开发机没有 Docker（虚拟化在固件层关闭，见
+> `AGENTS.md`），部署资产只做到**静态校验**（`backend/tests/test_deployment_config.py`
+> 的 69 条断言）与「同代码 × 本机 uvicorn + vite」的 HTTP 实测。本文中所有命令因此
+> 分两档标注：
+>
+> - **【已验证】** —— 命令与预期输出在本机同代码路径实跑过；
+> - **【首跑核对】** —— 第一次真实 `docker compose up` 时按 §9 清单逐条核对，
+>   有出入以实际输出为准，并回填本文。
+>
+> **与 `backend/docs/deployment.md` 的关系**：那份是 COCBack（小程序版）的部署清单，
+> 对本仓库**不适用**，差异一列就够踩坑了：
+>
+> 1. 其第 8 步「小程序合法域名」不存在 —— 本仓库是网页，不是小程序；
+> 2. 它假设 compose 里有 `certbot` 服务、nginx 服务名是 `nginx` —— 本仓库 compose
+>    没有 certbot 服务，对外服务名是 **`web`**（`docker compose logs -f web`）；
+> 3. 它要求 `PUBLIC_BASE_URL` 填**不带协议的备案域名**（当 nginx `SERVER_NAME` 用）——
+>    本仓库必须**带协议**（如 `http://<IP>`，拼媒体绝对 URL 用），nginx 的
+>    `server_name` 恒为 `_`（静态配置，见 `deploy/nginx.conf`）；
+> 4. 它的备份/续期脚本路径是 `/opt/coc` —— 本仓库建议克隆到 `/opt/cocpersonal`，
+>    `backup.sh` 已适配，`certbot-renew.sh` 是遗留参考（见 §8 的 HTTPS 实操）。
+
+## 0. 架构与铁律（先读这个再动手）
+
+一句话：`web` 托管 Vue 构建产物，把 `/api`、`/admin`、`/media`、`/healthz`、`/readyz`
+反代给 `api`；`api` 连 `postgres`，并内置 APScheduler 定时采集。
+
+| 容器 | 镜像来源 | 对外端口 | 数据落点 |
+| --- | --- | --- | --- |
+| web | `frontend/Dockerfile`（node:24-alpine 构建 → nginx:1.27-alpine） | **80**（可加 443） | 无状态 |
+| api | `backend/Dockerfile`（python:3.12-slim，非 root 运行） | 无（内部 8000） | `media` 卷（读写） |
+| postgres | postgres:16-alpine | 无（内部 5432） | `pgdata` 命名卷 |
+
+四条铁律（都有代码注释背书，别"优化"掉）：
+
+1. **api 的 `--workers 1` 是硬约束**（`backend/Dockerfile` 文件头）——令牌桶、读时
+   旁路缓存、APScheduler 全是进程内的；多 worker = 对 Supercell 速率翻倍 + 采集任务
+   重复执行。
+2. **只有 web 暴露端口**。别给 api/postgres 加 `ports:`——那是部署配置测试的断言内容。
+3. **对 Supercell 的速率默认 8 次/秒**（`COC_RATE_LIMIT`）。走 RoyaleAPI 共享代理时
+   **不要调高**（§6）。
+4. **`X-Forwarded-For` 必须透传**（`deploy/nginx.conf` 已配好）——对外限流按真实
+   客户端 IP 计数，不透传的话全网共用一个桶，一人 429 全站跟着 429。
+
+## 1. 前置条件
+
+| 项 | 要求 | 说明 |
+| --- | --- | --- |
+| 服务器 | Linux x86_64，2 核 4G 起 | 资源大头是 postgres 与前端构建 |
+| Docker | 24+，`docker compose version` 可用 | **v2 语法**，别用旧 docker-compose v1 |
+| 防火墙 | 放行 80（启用 HTTPS 后加 443） | api/postgres 无需对外 |
+| 出网 | `registry-1.docker.io`（拉镜像）、`registry.npmjs.org`（导入升级数据） | 夹具模式下**不需要** Supercell 网络 |
+| 域名（可选） | 已解析 + 备案 | 只在启用 HTTPS（§8）时需要 |
+| Supercell Token（可选） | 不填也能完整跑通整站 | 不填 = 夹具模式（§5） |
+
+```bash
+cd /opt && mkdir cocpersonal && cd cocpersonal
+git clone https://github.com/Solivagant-Soul/COCPersonal.git .
+docker compose version    # 【首跑核对】能打印 v2 版本信息
+```
+
+## 2. 配 `.env`（唯一需要动脑的一步）
+
+```bash
+cp .env.example .env
+openssl rand -base64 36   # 跑三次：POSTGRES_PASSWORD / ADMIN_PASSWORD / ADMIN_SECRET_KEY
+```
+
+**必填 5 项**（compose 用 `${VAR:?}` 保护：漏一项，`up` 时直接报错并点出变量名，
+不存在"带空密码上线"的可能）：
+
+| 变量 | 填什么 | 说明与坑 |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | 强密码 | 库虽在内网，但这是最后一道门 |
+| `ADMIN_USERNAME` | 用户名 | 后台 http://IP/admin/ 的登录名 |
+| `ADMIN_PASSWORD` | 强密码 | 凭据只从环境变量读，**不入库、无 create-admin 命令** |
+| `ADMIN_SECRET_KEY` | 随机串 ≥43 字符 | session cookie 签名密钥；泄露 = 任何人可伪造管理员会话 |
+| `PUBLIC_BASE_URL` | `http://<服务器IP>` **必须带协议** | 拼投稿/媒体图片的**绝对 URL** 用。**与 COCBack 文档相反**。上 HTTPS 后改 `https://<域名>` |
+
+可选变量（`.env.example` 里的默认值可直接用）：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `POSTGRES_DB` / `POSTGRES_USER` | `coc` / `coc` | 改了的话 §4/§8 的 psql 命令也要跟着改 |
+| `COC_API_TOKEN` | 空 | **空 = 夹具模式**；拿到 Token 只填这里，绝不入 git |
+| `COC_BASE_URL` | 空（官方直连） | 服务器无静态 IP 时填 `https://cocproxy.royaleapi.dev/v1`（§6） |
+| `COC_RATE_LIMIT` | 8 | 上游令牌桶（次/秒），走代理**不要调高** |
+| `RATE_LIMIT_PER_MINUTE` | 60 | 对外每 IP 每分钟；`/healthz`、`/readyz` 不计桶 |
+| `APP_ROLE` | `all` | 单机部署固定 `all`；`api`/`collector` 是拆进程预留位 |
+| `LOG_LEVEL` | `INFO` | |
+
+```bash
+git check-ignore .env && echo OK   # 必须有输出：.env 绝不能入库
+```
+
+## 3. 启动与建表
+
+```bash
+docker compose up -d --build     # 首次较久：前端要 npm ci + vue-tsc
+docker compose ps
+```
+
+期望状态【首跑核对】：
+
+| 服务 | 期望 |
+| --- | --- |
+| postgres | `running (healthy)`（healthcheck = pg_isready） |
+| api | `running (healthy)`（healthcheck = 容器内 curl `/readyz`） |
+| web | `running` |
+
+> api 的探针是 **`/readyz`**（连 DB 验证）而不是 `/healthz`（进程存活即 200）——
+> 用后者的话 DB 挂了容器照样"健康"。
+
+首次启动建表（api 镜像里带了 `alembic.ini` + `migrations/`）：
+
+```bash
+docker compose exec api alembic upgrade head    # 跑完 9 个迁移
+docker compose exec api alembic current         # 期望： d4c8a36b19e6 (head)
+```
+
+表数量核对【已验证·本机同一迁移链，2026-10-19 实测】：
+
+```bash
+docker compose exec postgres psql -U coc -d coc -c \
+  "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+# 期望 28 = 27 张业务表 + alembic_version
+```
+
+## 4. 导入升级数据
+
+数据源是 MIT 协议的开源 npm 包 `clashofclans.js@4.0.5`（**与 Supercell API 无关，
+不占配额**），upsert 幂等、可重复执行。容器需要能访问 `registry.npmjs.org`：
+
+```bash
+docker compose exec api python -m app.cli import-game-data
+```
+
+期望输出【已验证·本机同代码实测，2026-10-19】：
+
+```
+写完 2073 行{'troop': 599, 'spell': 111, 'hero': 513, 'equipment': 850}
+```
+
+核对 SQL（本机 psql 实测通过，可原样复制）：
+
+```bash
+docker compose exec postgres psql -U coc -d coc -c \
+  "SELECT category, count(*) FROM upgrade_items GROUP BY category ORDER BY count DESC;"
+# equipment |   850
+# troop     |   599
+# hero      |   513
+# spell     |   111
+```
+
+不导入的话，升级相关接口全部返回空列表，`/admin/` 的「升级条目」也是空的。
+`name_zh` 导入阶段刻意留空（不猜翻译），要人工在后台补。
+
+## 5.（无 Token 时的）夹具数据与排行榜
+
+`COC_API_TOKEN` 为空时，后端不打官方 API，由 `app/coc/devfixtures.py` 的
+FixtureTransport 用 `backend/tests/fixtures/` 的本地样本应答：**HTTP 契约完全真实，
+数据是手搓占位**（响应自带 `_source`/`_todo` 键自报身份），玩家详情永远返回同一个
+样本玩家——不是 bug，接 Token 后消失。
+
+让排行榜页有东西可看：
+
+```bash
+docker compose exec api python -m app.cli seed-dev-rankings
+# 期望： 已灌入： {'locations': 4, 'rankings': 3}
+# 幂等（走全量替换），重复跑不会翻倍【已验证·本机重复执行】
+```
+
+## 6. 接入真实 Supercell Token
+
+1. Supercell 开发者后台建 API key。
+2. **服务器无静态 IP**（最常见）→ `.env` 两行：
+
+   ```bash
+   COC_API_TOKEN=你的token
+   COC_BASE_URL=https://cocproxy.royaleapi.dev/v1
+   ```
+
+   并且 key 的 **Allowed IP 填 `45.79.218.79`（RoyaleAPI 代理的 IP）**，
+   **不要**填服务器 IP。代理只换域名转发，路径/鉴权/错误语义全不变。
+3. 服务器有静态 IP → 清空 `COC_BASE_URL`，Allowed IP 填服务器 IP。
+4. 生效方式（改了 `.env` 必须重建容器）：
+
+   ```bash
+   docker compose up -d
+   ```
+
+5. 验证切换成功：
+
+   ```bash
+   curl -s http://127.0.0.1/api/v1/players/%239QJ8L0 | head -c 300
+   # 夹具模式：JSON 里有 "_source"/"_todo" 键；真实模式：没有
+   ```
+
+6. 看采集状态（真实模式下排行榜靠 `app/collector/` 定时采集，不在实时查询路径上）：
+
+   ```bash
+   curl -s http://127.0.0.1/api/v1/meta/freshness | python3 -m json.tool
+   # data.rankings：每地区每类榜单的最后采集时间
+   # data.collectorRuns：最近 20 次采集任务（job 可能状态：success/failed/partial）
+   # 调度周期【已验证·scheduler.py】：rankings 每 6h（:13 分）、leagues/seasons 每 1h（:41/:29）、static_data 每天（03:17 UTC），全部错开整点
+   ```
+
+> 红线：代理是社区免费共享的，**不要把 `COC_RATE_LIMIT` 调高**；把它当成"救慢采集"
+> 的手段 = 把成本转嫁给运维代理的人。
+
+## 7. 冒烟验证（假设服务器 IP 是 `1.2.3.4`）
+
+| # | 操作 | 期望 |
+| --- | --- | --- |
+| 1 | `curl -s http://1.2.3.4/healthz` | `{"status":"ok"}` |
+| 2 | `curl -s http://1.2.3.4/readyz` | `{"status":"ready"}` |
+| 3 | 浏览器 `http://1.2.3.4/` | 首页正常渲染（侧边栏「查询 / 排行榜」） |
+| 4 | 首页输入 `8qu8j9j` 回车 | 跳 `/players/%238QU8J9J` 并渲染（夹具模式始终显示同一占位玩家） |
+| 5 | 排行榜 tab | 按地区/联赛切换可见数据（夹具数据，需已跑 §5） |
+| 6 | `curl -s http://1.2.3.4/api/v1/players/%239QJ8L0` 连发两次，看 `meta.cache` | 第一次 `MISS`，第二次 `HIT`【已验证·本机】 |
+| 7 | 手改 URL `http://1.2.3.4/no-such-page` | 友好 404 页（不是白屏） |
+| 8 | `http://1.2.3.4/admin/` | 登录页可用 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 登入 |
+| 9 | `curl -sI http://1.2.3.4/media/` | 403（`autoindex off` 生效）；出现**目录列表** = 配置被改坏 |
+| 10 | 后台「升级条目」 | 有 2073 条数据（§4 已导入则 `name_zh` 为空待补） |
+
+> 浏览器冒烟八项的完整清单（导航、查询跳转、错误输入不跳转、404 页、二次加载 HIT）
+> 在本机 Vue+uvicorn 组合下已逐项实测通过（2026-10-17，记录于
+> `docs/superpowers/plans/2026-10-16-cocpersonal-mvp.md`）；容器环境下按上表复核。
+
+## 8. HTTPS 升级（可选，默认 HTTP-only）
+
+默认单端口 80（`deploy/nginx.conf` 末尾有 HTTPS 注释块）。需要域名（§1 可选项）：
+
+1. **compose**（`docker-compose.yml` 的 web 服务加一个端口映射与两个挂载）：
+
+   ```yaml
+   ports:
+     - "80:80"
+     - "443:443"                                  # 新增
+   volumes:
+     - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+     - media:/data/media:ro
+     - ./deploy/certs:/etc/nginx/certs:ro          # 新增：证书
+     - ./deploy/certbot-www:/var/www/certbot       # 新增：ACME 验证目录
+   ```
+
+2. **nginx.conf**：80 端口 server 里加一段（放最前，否则会被 301 拦掉）：
+
+   ```nginx
+   location ^~ /.well-known/acme-challenge/ {
+       root /var/www/certbot;
+   }
+   ```
+
+   再按文件末尾注释块：取消 443 ssl server 注释，把 80 server 的所有业务 location
+   原样**复制**进 443 server（nginx 不允许跨 server 复用 location）；80 的 location /
+   改为 `return 301 https://$host$request_uri;`。
+3. **签证书**（宿主机 certbot，webroot 模式写到挂载进容器的目录）：
+
+   ```bash
+   mkdir -p /opt/cocpersonal/deploy/certs /opt/cocpersonal/deploy/certbot-www
+   sudo certbot certonly --webroot -w /opt/cocpersonal/deploy/certbot-www \
+        -d coc.example.com --email you@example.com --agree-tos --no-eff-email
+   sudo cp "/etc/letsencrypt/live/coc.example.com/fullchain.pem" /opt/cocpersonal/deploy/certs/
+   sudo cp "/etc/letsencrypt/live/coc.example.com/privkey.pem"  /opt/cocpersonal/deploy/certs/
+   ```
+4. **生效**（nginx.conf 是 bind mount，reload 即可；首次开 443 端口要 `up -d`）：
+
+   ```bash
+   docker compose up -d
+   docker compose exec web nginx -s reload
+   ```
+
+   `PUBLIC_BASE_URL` 改成 `https://coc.example.com` 后再 `docker compose up -d`（改的是
+   `.env`，必须重建容器，不能只 reload）。
+5. **自动续期**：遗留的 `backend/deploy/certbot-renew.sh` 引用 compose 里不存在的
+   `certbot`/`nginx` 服务，**只能当思路参考**。本仓库等价做法（宿主机 crontab）：
+
+   ```cron
+   17 3,15 * * * certbot renew --quiet --webroot -w /opt/cocpersonal/deploy/certbot-www \
+     --deploy-hook "cp -f /etc/letsencrypt/live/coc.example.com/*.pem /opt/cocpersonal/deploy/certs/ && docker compose -f /opt/cocpersonal/docker-compose.yml exec -T web nginx -s reload"
+   ```
+
+   更稳的写法是把 hook 存成脚本（先 `nginx -t` 合法性检查再 reload），思路照抄
+   `certbot-renew.sh` 的注释。
+6. **验证**：`curl -I https://coc.example.com/healthz` 期望 200；
+   `curl -sI http://域名/` 期望 301；浏览器锁图标 / `/media/` 图片正拼成 https。
+
+> 以上 HTTPS 流程**从未在任何机器真实执行过**（compose 无 certbot 服务是刻意简化），
+> 启用时按【首跑核对】心态逐条验证。小程序风格的"先 HTTP 起服务再签证书"顺序
+> 完全适用：80 端口先跑起来，webroot 才写得进验证文件。
+
+## 9. 首跑验收清单（compose 从未在本机真实 up 过）
+
+第一次真实部署时**逐条打勾**，任何一步与期望不符：停下来记录偏差、修正本文档，
+再继续下一步 —— 这份文档的价值取决于它被"实测"的程度。
+
+| # | 步骤 | 命令 | 期望 |
+| --- | --- | --- | --- |
+| 1 | compose 校验 | `docker compose config --quiet` | exit 0，无输出 |
+| 2 | 镜像构建 | `docker compose build` | 两个本地镜像构建成功 |
+| 3 | 容器健康 | `docker compose ps` | §3 表格状态 |
+| 4 | 迁移 | `docker compose exec api alembic current` | `d4c8a36b19e6 (head)`【已验证·本机同迁移链】 |
+| 5 | 表数 | information_schema 计数 | 28（§3）【已验证·本机】 |
+| 6 | 升级数据 | 2073 行按四类分布 | §4【已验证·本机】 |
+| 7 | 探针 | `/healthz` `/readyz` | §7 第 1/2 行 |
+| 8 | 前端 | `curl -sI http://127.0.0.1/` | 200, `text/html` |
+| 9 | 缓存 | `meta.cache` MISS→HIT | §7 第 6 行 |
+| 10 | 后台 | SQLAdmin 登录 | §7 第 8 行 |
+
+## 10. 常见故障速查
+
+| 症状 | 检查点 |
+| --- | --- |
+| `up` 直接报 `POSTGRES_PASSWORD 必填` | `.env` 没建、不在仓库根、变量名拼错（compose 的 `${VAR:?}` 在拦你，好事） |
+| api 反复重启，日志 `connection ... postgres refused` | postgres 还没 healthy，等 start_period（40s）过完再看；仍不行查 `POSTGRES_PASSWORD` 是否两边一致 |
+| 页面 502 | `docker compose logs -f api`；`readyz` 手动 curl 试 |
+| api 起不来，日志见 `sqlalchemy ... version mismatch` | 别动 `pyproject.toml` 里 `sqlalchemy<2.1` 的上盖——2.1.x 的 wheel 有真实问题（本机逐字节比对验证过），锁版本不是保守是教训 |
+| 刷新详情页变 404 | SPA fallback：`location /` 里的 `try_files ... /index.html`；检查是否改坏了 `deploy/nginx.conf` |
+| 后台登录失败 | `.env` 的 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 大小写、多余引号；改后**必须** `docker compose up -d`（凭据只进环境变量） |
+| 头像/媒体图片裂 | `PUBLIC_BASE_URL` 协议或地址不对（拼的是绝对 URL） |
+| 大量 429 | 真实客户端超 60 次/分；`X-Forwarded-For` 已透传，问题多半在共享出口 IP；临时下调 `RATE_LIMIT_PER_MINUTE` 需重启 api |
+| 排行榜空 | 夹具模式没跑 §5；真实模式 `meta/freshness` 看采集时间和 `collectorRuns` |
+| 磁盘满 | `backup.sh` 未设时备份会吃满磁盘——恢复它或手动清理（磁盘满的表象是"服务正常但数据不再更新"） |
+
+## 11. 已知限制
+
+| # | 内容 |
+| --- | --- |
+| 1 | `docker compose up` 在本机从未真实执行（无 Docker）；§9 清单必做 |
+| 2 | 夹具样本是占位数据（`_source`/`_todo` 自报），拿真实 Token 后替换 |
+| 3 | `sqlalchemy` 锁 `<2.1`：升依赖时别放宽（见 §10） |
+| 4 | 单 worker/单副本：扩展前提是把限流、缓存、调度换成共享实现 + `APP_ROLE` 拆分 |
+| 5 | HTTPS 流程从未真实执行（§8） |

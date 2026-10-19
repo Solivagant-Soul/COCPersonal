@@ -673,3 +673,33 @@ cd frontend; npm run dev                                  # http://localhost:517
 - **夹具上游对任意 `/players/*` 都返回同一份样本**，所以本地**无法**触发
   「玩家不存在（404）」的真实路径；该分支由组件测试（mock）覆盖。
 
+## Task 13：部署文档（2026-10-19）
+
+**交付**：根目录新增 `docs/deployment.md`（定位=部署权威文档）。README、AGENTS.md 同步
+挂指针；`backend/docs/deployment.md`（COCBack 小程序版遗留）顶部加过时横幅。
+
+**关键裁定**：
+
+1. **`backend/docs/deployment.md` 不重写、只加横幅**。它与 COCPersonal 部署资产存在
+   四处实质冲突（小程序合法域名步骤 / `certbot` 服务与 `nginx` 服务名 /
+   `PUBLIC_BASE_URL` 是否带协议 / `/opt/coc` 路径），照抄会踩坑；其运维脚本思路
+   （certbot webroot 续期、备份清理）仍被新文档引用。
+2. **两处部署脚本的处置**：`backend/deploy/backup.sh` 原样在
+   COCPersonal 上会失败——① 媒体卷名硬编码 COCBack 的 `coc-backend_media`（本仓库
+   compose 项目名 `cocpersonal` → 实际卷 `cocpersonal_media`）；② 脚本假设 cwd 在仓库根
+   （cron 调用时 cwd 是 `$HOME`，`docker compose` 会找不到 compose 文件）。→
+   改为自 `cd` 到脚本位置的上两级 + `MEDIA_VOLUME` 可覆盖；`bash -n` 校验。
+   `certbot-renew.sh` **不动**（引用不存在的 `certbot`/`nginx` 服务，仅当遗留思路参考，
+   新文档 §8 给出本仓库等价做法）。
+3. **文档里所有数字都要能复现**，写作前实测：迁移链单 head `d4c8a36b19e6`；
+   public schema 表数 **28**（27 张业务表 + alembic_version，旧文档的"27 张表"与之
+   自洽）；`upgrade_items` 导入 **2073** 行（equipment 850 / troop 599 / hero 513 /
+   spell 111，本机 `import-game-data` 重跑实测）；seed 幂等全量替换；采集调度
+   rankings 每 6h（:13）、leagues/seasons 每 1h（:41/:29）、static_data 每天 03:17 UTC
+   （全部错开整点）。
+4. **诚实分级是本文的第一设计**：所有命令分 **【已验证】**（本机同代码路径实跑）与
+   **【首跑核对】**（compose 从未在本机 up 过，首次部署按 §9 10 项清单逐条核对回填）。
+   不假装文档=已验证的部署。
+5. README「已知限制」同步收口：浏览器 DOM 冒烟已补做通过（此前那条欠账已出账），
+   未完成项只剩 `docker compose up`。
+

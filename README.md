@@ -10,8 +10,9 @@
 
 | 路径 | 内容 |
 | --- | --- |
-| `backend/` | 后端：FastAPI + SQLAlchemy 2.0 async + PostgreSQL + alembic + APScheduler。**整体搬自 COCBack**。其硬约束、环境陷阱、测试约定见 **`backend/AGENTS.md`**；运维（备份 / 证书 / 排障）见 `backend/docs/deployment.md` |
+| `backend/` | 后端：FastAPI + SQLAlchemy 2.0 async + PostgreSQL + alembic + APScheduler。**整体搬自 COCBack**。其硬约束、环境陷阱、测试约定见 **`backend/AGENTS.md`** |
 | `frontend/` | 前端：Vue 3 + Vite + TypeScript + Element Plus + Vue Router + Pinia + axios + Vitest |
+| `docs/deployment.md` | **部署文档（权威）**：.env 逐项说明、建表与导入验证、冒烟清单、运维、HTTPS 实操 |
 | `deploy/nginx.conf` | 对外入口：托管 SPA 静态文件 + 反代 `/api`、`/admin`、`/media`、探针 |
 | `docker-compose.yml` | 单机三容器栈：`web`（对外 80）+ `api`（内部 8000）+ `postgres` |
 | `.env.example` | 组合栈的环境变量模板（**含必填项说明**） |
@@ -57,6 +58,9 @@ cd frontend; npm run build           # vue-tsc 类型检查 + 产物到 frontend
 
 ## 部署（Docker Compose，Linux 单机）
 
+> 本节是速查。**完整部署步骤（.env 逐项、建表/导入的验证 SQL、冒烟清单、备份恢复、
+> HTTPS 实操）见权威文档 [`docs/deployment.md`](docs/deployment.md)。**
+
 只有 `web` 映射端口，`api` 与 `postgres` 都只在 compose 内部网络里。
 
 ```bash
@@ -96,8 +100,11 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 1. `docker-compose.yml` 的 `web` 加端口 `- "443:443"`，并加只读挂载 `- ./deploy/certs:/etc/nginx/certs:ro`
 2. 取消 `deploy/nginx.conf` 末尾那段注释掉的 `443 ssl` server，把它的 location 段按注释补齐
-3. 80 端口的 server 里改成 `return 301 https://$host$request_uri;`
-4. 证书续期仿照 `backend/deploy/certbot-renew.sh` 写一份
+3. 80 端口的 server 里改成 `return 301 https://$host$request_uri;`（保留 ACME 验证目录的 location）
+4. 证书续期仿照 `backend/deploy/certbot-renew.sh` 写一份（**注意**：那个脚本引用的
+   `certbot`/`nginx` 服务在本仓库 compose 里不存在，只抄思路）
+
+逐步命令见 `docs/deployment.md` §8。
 
 ## 数据与夹具（还没有真实 Token 时）
 
@@ -116,11 +123,9 @@ Allowed IP 填代理的 `45.79.218.79`（不是服务器 IP）。
 ## 已知限制
 
 - **`docker compose up` 从未在本机跑过**：本机 Docker 不可用，这里只验证到配置与构建产物
-  的正确性（69 项静态校验 + 镜像构建所需的文件齐备）。**第一次 `up` 必须在 Linux 机器上做。**
-- **浏览器 DOM 手测未在本机完成**：本机桌面浏览器被系统级 AdGuard 代理过滤，会对
-  `:5173` 的模块请求返回 502 / 截断响应，页面渲染不出来。同一批静态资源用 `curl` 取是
-  完整的（入口 bundle 约 1.0 MB，未截断），所以是环境问题而非代码问题。详见
-  `docs/superpowers/plans/2026-10-16-cocpersonal-mvp.md` 的「联调记录」。
+  的正确性（69 项静态校验 + 镜像构建所需的文件齐备）。**第一次 `up` 必须在 Linux 机器上做**，
+  验收清单在 `docs/deployment.md` §9。浏览器 DOM 冒烟已于 2026-10-17 用本机
+  uvicorn + vite 组合补做通过（此前受 AdGuard 系统代理干扰，详见计划文档「联调记录」）。
 - **排行榜依赖采集写库**：种子脚本只造夹具数据；真实排名需要 Token + 采集器。
 - 前端只按 PC 浏览器设计（Element Plus 桌面端），没有做手机端响应式。
 
