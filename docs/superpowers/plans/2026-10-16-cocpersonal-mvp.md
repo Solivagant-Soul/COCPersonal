@@ -703,3 +703,47 @@ cd frontend; npm run dev                                  # http://localhost:517
 5. README「已知限制」同步收口：浏览器 DOM 冒烟已补做通过（此前那条欠账已出账），
    未完成项只剩 `docker compose up`。
 
+## Task 14：首次真实部署的排障（2026-10-20）
+
+**触发**：用户在一台 Linux 服务器上首次 `docker compose up` → `api` 容器 `Restarting (1)`
+（web/postgres 正常）。`docker compose ps` 同时刷 4 条 `The "i6JEk" variable is not set`。
+
+**根因（两个独立问题）**：
+
+1. **api 崩溃 = 生产镜像缺 `itsdangerous`**。traceback：
+   `main.py:151 build_admin → sqladmin/authentication.py:21 → starlette/middleware/sessions.py:8
+   → ModuleNotFoundError` → uvicorn 加载 ASGI 应用失败、**exit 1** → 无限重启。
+   `itsdangerous` 只挂在 `fastapi` 的 `extra == "all"` 与 `sqladmin` 的 `extra == 'auth'` 下，
+   而 `pip install .` **不装 extras** → 镜像里没有；本机环境恰好装着它（`Required-by:` 为空，
+   是孤儿包）→ **501 个测试全绿、镜像起不来**。
+2. **`${i6JEk}` 警告 = `.env` 的值被 compose 插值**。`POSTGRES_PASSWORD=:jL$i6JEk*^!`
+   里的 `$i6JEk` 被当成未定义变量 → 静默截断成 `:jL*^!`。**两边同步截断**
+   （`POSTGRES_PASSWORD` 与 `DATABASE_URL` 读同一个值）→ 认证仍对得上，但密码已不是设的那个。
+
+**裁定**：
+
+1. `itsdangerous>=2.0` **显式声明**进 `pyproject.toml`（不靠 extra 顺带）。
+2. 新增守门测试 `backend/tests/test_runtime_deps.py`：把「本机装着、但不在已声明依赖闭包内」
+   的孤儿包**屏蔽掉**，再在子进程里 `import app.main` —— **复现镜像环境**。
+   **第一版是假测试**：闭包计算把 `extra == "..."` 的依赖也算进去了（等于假装镜像里有它们），
+   于是 itsdangerous 进了闭包、没被屏蔽 → 测试在修复前就绿。修正为按 marker 求值、
+   `extra=""` → extras 一律排除后，测试**先红（复现出与容器完全相同的 traceback）、
+   再由 `pyproject.toml` 的声明转绿**。
+3. 文档 `docs/deployment.md` §2 新增「密码里的 `$` 会被 compose 插值」小节：
+   单引号=不插值、双引号也插值、无引号插值（均本机实测）；建议密码只用字母数字；
+   改密码后要 `ALTER USER` 同步数据库角色。§3 补「镜像里只有声明过的依赖」的提醒。
+4. `backend/AGENTS.md` 的「环境陷阱」新增同款条目（本机 vs 镜像的依赖差异）。
+
+**排障方法沉淀**（下次同类问题可直接用）：
+
+- `Restarting (1)` = uvicorn **导入期**失败（`load_app` 抛异常 → exit 1），不是运行期错误；
+- compose 的 `${VAR:?}` 检查的是**插值后**的值 → 必填变量不可能为空；
+- `Settings` 的必填字段拿到**空串不报错**（pydantic 合法）→ 「配置缺失」可排除；
+- 两者合起来把嫌疑范围压到「镜像缺依赖」与「代码版本过旧」两项，再用日志 traceback 一眼分辨。
+
+**验证**：503 passed（501 + 2 条新守卫）；构建出的 wheel 元数据含
+`Requires-Dist: itsdangerous>=2.0` → 镜像的 `pip install .` 会装上它。
+
+**欠账**：本机无 Docker，真实 `up` 仍在服务器侧验证（`git pull` → `docker compose up -d --build`
+→ `alembic upgrade head` → `import-game-data`）。
+

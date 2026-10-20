@@ -97,6 +97,29 @@ openssl rand -base64 36   # 跑三次：POSTGRES_PASSWORD / ADMIN_PASSWORD / ADM
 git check-ignore .env && echo OK   # 必须有输出：.env 绝不能入库
 ```
 
+### 陷阱：密码里的 `$` 会被 compose 插值
+
+**`.env` 的值也会被 compose 做变量插值**，而且**静默截断**——不报错，只留一条 warning。
+
+实测（2026-10-20，compose v2 本机验证）：
+
+| `.env` 里写的值 | compose 实际给容器的值 | 警告 |
+| --- | --- | --- |
+| `PW=:jL$i6JEk*^!`（无引号） | `:jL*^!` ← `$i6JEk` 被当变量、没设 → 变空串 | 有 |
+| `PW=":jL$i6JEk*^!"`（双引号） | `:jL*^!`（同上，双引号**也**插值） | 有 |
+| `PW=':jL$i6JEk*^!'`（单引号） | 原样保留（单引号 = 不插值） | 无 |
+
+**所以密码只用字母数字**（`$ : @ # / %` 一律避开）。`$` 尤其危险：它既会被插值，
+还会进 `DATABASE_URL`（compose 第 45 行把密码拼进 URL），两处一起被改。
+需要特殊字符时用**单引号**包住整个值。
+
+插值截断是**两边同步**的（`POSTGRES_PASSWORD` 与 `DATABASE_URL` 读同一个值），
+所以认证仍能对上——但你以为设的密码已经不是那个了。**改密码后要同步改数据库里的角色**：
+
+```bash
+docker compose exec postgres psql -U coc -d coc -c "ALTER USER coc WITH PASSWORD '新密码';"
+```
+
 ## 3. 启动与建表
 
 ```bash
@@ -116,6 +139,11 @@ docker compose ps
 > 用后者的话 DB 挂了容器照样"健康"。
 
 首次启动建表（api 镜像里带了 `alembic.ini` + `migrations/`）：
+
+> **镜像里只有 `pyproject.toml` 声明过的依赖。** 本机环境多出来的包（孤儿包）不会进镜像，
+> 于是「本机测试全绿、容器启动即崩」——这是真实发生过的坑（`itsdangerous`）。
+> `backend/tests/test_runtime_deps.py` 守着这条：它把孤儿包屏蔽掉再 import 一次应用，
+> 复现镜像环境。**加了新依赖记得进 `dependencies`。**
 
 ```bash
 docker compose exec api alembic upgrade head    # 跑完 9 个迁移
