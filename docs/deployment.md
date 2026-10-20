@@ -120,6 +120,33 @@ git check-ignore .env && echo OK   # 必须有输出：.env 绝不能入库
 docker compose exec postgres psql -U coc -d coc -c "ALTER USER coc WITH PASSWORD '新密码';"
 ```
 
+### 陷阱：改 `.env` 里的密码 ≠ 改了数据库的密码
+
+**postgres 角色的密码在数据卷第一次初始化时就被冻结了。** 官方镜像只对**空**数据目录
+应用 `POSTGRES_PASSWORD`；之后无论怎么改 `.env`，数据库里的角色密码都不会变。
+于是 api 连不上：
+
+```
+asyncpg.exceptions.InvalidPasswordError: password authentication failed for user "coc"
+```
+
+而且 api 容器会变成 **`unhealthy`**（探针 `/readyz` 连不上 DB —— 这正是用 `/readyz`
+而不是 `/healthz` 的价值）。
+
+**改密码必须两边一起改**（容器内本地连接是 `trust`，不需要旧密码）：
+
+```bash
+NEW=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)
+docker compose exec postgres psql -U coc -d coc -c "ALTER USER coc WITH PASSWORD '$NEW';"
+# 把 .env 里的 POSTGRES_PASSWORD 改成同一个 $NEW（纯字母数字，别带 $ 等会被插值的字符）
+docker compose up -d          # 改 .env 必须 up -d 重建，restart 不重读环境变量
+docker compose ps             # api 应回到 healthy
+```
+
+> 排查时先确认「两边」现在各是什么：`docker compose exec postgres printenv POSTGRES_PASSWORD`
+> 与 `docker compose exec api printenv DATABASE_URL` —— 它们一定一致（同一个 `.env`），
+> 不一致的是**库里的角色密码**（读不出来，只有哈希），所以直接 `ALTER USER` 统一最省事。
+
 ## 3. 启动与建表
 
 ```bash
@@ -368,6 +395,7 @@ docker compose exec api python -m app.cli seed-dev-rankings
 | 刷新详情页变 404 | SPA fallback：`location /` 里的 `try_files ... /index.html`；检查是否改坏了 `deploy/nginx.conf` |
 | 后台登录失败 | `.env` 的 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 大小写、多余引号；改后**必须** `docker compose up -d`（凭据只进环境变量） |
 | 头像/媒体图片裂 | `PUBLIC_BASE_URL` 协议或地址不对（拼的是绝对 URL） |
+| **api `unhealthy` + 日志 `password authentication failed for user "coc"`** | `.env` 的密码改了，但**库里的角色密码在数据卷初始化时就冻结了** → 必须 `ALTER USER` 同步（见 §2 陷阱） |
 | 大量 429 | 真实客户端超 60 次/分；`X-Forwarded-For` 已透传，问题多半在共享出口 IP；临时下调 `RATE_LIMIT_PER_MINUTE` 需重启 api |
 | 排行榜空 | 夹具模式没跑 §5；真实模式 `meta/freshness` 看采集时间和 `collectorRuns` |
 | 磁盘满 | `backup.sh` 未设时备份会吃满磁盘——恢复它或手动清理（磁盘满的表象是"服务正常但数据不再更新"） |

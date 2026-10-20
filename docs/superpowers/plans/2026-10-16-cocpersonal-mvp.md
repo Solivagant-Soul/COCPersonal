@@ -842,3 +842,28 @@ BuildKit（`docker:default` 驱动 + `=>` 进度格式），所以 cache mount �
 **验证**：506 passed（504 + 2 条新断言）；**构建加速效果需在服务器上实测**
 （本机无 Docker，无法给出秒数）。
 
+## Task 17：数据库密码冻结（2026-10-20）
+
+**触发**：服务器上 api 容器 `unhealthy`；`seed-dev-rankings` 报
+`asyncpg.exceptions.InvalidPasswordError: password authentication failed for user "coc"`。
+
+**根因**：**postgres 角色的密码在数据卷首次初始化时就被冻结**。官方镜像只对**空**数据
+目录应用 `POSTGRES_PASSWORD`；之后改 `.env` 里的密码 → compose 会重建 postgres 容器
+（配置变了）→ 但库里的角色密码**不会变** → api 的 `DATABASE_URL` 用的是新值 → 认证失败。
+
+**先排除掉的假设**：compose 对 `POSTGRES_PASSWORD` 与 `DATABASE_URL` 两处给的**是同一个值**
+（本机实测：两边都是 `:jL*^!`）——所以不是 compose 插值不一致的问题，是**库里的角色密码**
+与 `.env` 脱节了（期间改过 `.env` 的密码）。
+
+**为什么 api 是 `unhealthy` 而不是干脆起不来**：健康检查用的是 `/readyz`（会连 DB），
+认证失败 → 探针 503 → 标记 unhealthy。**这正是当初选 `/readyz` 而不是 `/healthz` 的价值**：
+故障被探针直接暴露，而不是让流量打到 500 上。
+
+**处置（文档化，不改代码）**：`docs/deployment.md` §2 新增「改 `.env` 里的密码 ≠ 改了数据库
+的密码」小节 —— 改密码必须 `ALTER USER` + 改 `.env` + `up -d` 三步一起做；
+§10 排障表加对应条目。**没有代码可改**：这是 postgres 官方镜像的既定行为，
+能做的只是别让人踩。
+
+**顺带说明**：本次同时验证了 Task 15 的修复 —— 夹具确实进了镜像
+（`/opt/venv/lib/python3.12/site-packages/app/coc/fixtures`，5 份齐全）。
+
