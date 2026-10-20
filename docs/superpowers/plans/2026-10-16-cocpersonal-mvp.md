@@ -744,6 +744,23 @@ cd frontend; npm run dev                                  # http://localhost:517
 **验证**：503 passed（501 + 2 条新守卫）；构建出的 wheel 元数据含
 `Requires-Dist: itsdangerous>=2.0` → 镜像的 `pip install .` 会装上它。
 
-**欠账**：本机无 Docker，真实 `up` 仍在服务器侧验证（`git pull` → `docker compose up -d --build`
-→ `alembic upgrade head` → `import-game-data`）。
+**欠账**：本机无 Docker，真实 `up` 在服务器侧验证。
+
+### Task 14 续：首次真实 `up` 的结果（2026-10-20，Linux 服务器）
+
+修复推送后，服务器 `docker compose up -d --build`：
+
+- 两个镜像构建完成（api 的 `pip install .` 耗时 **22 分钟**——PyPI 带宽慢；web 的
+  `npm ci` + `npm run build` 合计约 20 秒）；
+- `docker compose ps`：**api `Up (healthy)`**（此前是 `Restarting (1)`）、
+  postgres healthy、web `0.0.0.0:80->80/tcp`；api 只暴露 `8000/tcp`、**未映射到宿主机**
+  ✓（符合「只有 web 对外」的规矩）；
+- `alembic upgrade head` 跑完 9 个迁移 → `alembic current` = **`d4c8a36b19e6 (head)`**
+  ✓（与本机测得的 head 一致）；public schema 表数 **28** ✓（27 业务表 + alembic_version）；
+- **第 6–12 项（导入升级数据、冒烟、后台登录、镜像依赖抽查、`.env` 插值检查）当时未执行**，
+  密码轮换也还没做 → `i6JEk` 警告仍在（等值截断后的 `:jL*^!` 仍在用）。
+
+**顺带观察（未处理）**：builder 阶段 `PIP_NO_CACHE_DIR=1` → 每次重建都重下全部依赖，
+22 分钟基本都耗在这；用 BuildKit cache mount 可显著缩短。`Docker Compose is configured to
+build using Bake, but buildx isn't installed` 是无害告警（compose 内置 bake 兜住了构建）。
 
