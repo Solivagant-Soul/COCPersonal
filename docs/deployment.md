@@ -9,7 +9,7 @@
 > 分两档标注：
 >
 > - **【已验证】** —— 命令与预期输出在本机同代码路径实跑过；
-> - **【首跑核对】** —— 第一次真实 `docker compose up` 时按 §9 清单逐条核对，
+> - **【首跑核对】** —— 第一次真实 `docker compose up` 时按 §10 清单逐条核对，
 >   有出入以实际输出为准，并回填本文。
 >
 > **与 `backend/docs/deployment.md` 的关系**：那份是 COCBack（小程序版）的部署清单，
@@ -22,7 +22,7 @@
 >    本仓库必须**带协议**（如 `http://<IP>`，拼媒体绝对 URL 用），nginx 的
 >    `server_name` 恒为 `_`（静态配置，见 `deploy/nginx.conf`）；
 > 4. 它的备份/续期脚本路径是 `/opt/coc` —— 本仓库建议克隆到 `/opt/cocpersonal`，
->    `backup.sh` 已适配，`certbot-renew.sh` 是遗留参考（见 §8 的 HTTPS 实操）。
+>    `backup.sh` 已适配，`certbot-renew.sh` 是遗留参考（见 §9 的 HTTPS 实操）。
 
 ## 0. 架构与铁律（先读这个再动手）
 
@@ -54,7 +54,7 @@
 | Docker | 24+，`docker compose version` 可用 | **v2 语法**，别用旧 docker-compose v1 |
 | 防火墙 | 放行 80（启用 HTTPS 后加 443） | api/postgres 无需对外 |
 | 出网 | `registry-1.docker.io`（拉镜像）、`registry.npmjs.org`（导入升级数据） | 夹具模式下**不需要** Supercell 网络 |
-| 域名（可选） | 已解析 + 备案 | 只在启用 HTTPS（§8）时需要 |
+| 域名（可选） | 已解析 + 备案 | 只在启用 HTTPS（§9）时需要 |
 | Supercell Token（可选） | 不填也能完整跑通整站 | 不填 = 夹具模式（§5） |
 
 ```bash
@@ -85,7 +85,7 @@ openssl rand -base64 36   # 跑三次：POSTGRES_PASSWORD / ADMIN_PASSWORD / ADM
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `POSTGRES_DB` / `POSTGRES_USER` | `coc` / `coc` | 改了的话 §4/§8 的 psql 命令也要跟着改 |
+| `POSTGRES_DB` / `POSTGRES_USER` | `coc` / `coc` | 改了的话 §4/§9 的 psql 命令也要跟着改 |
 | `COC_API_TOKEN` | 空 | **空 = 夹具模式**；拿到 Token 只填这里，绝不入 git |
 | `COC_BASE_URL` | 空（官方直连） | 服务器无静态 IP 时填 `https://cocproxy.royaleapi.dev/v1`（§6） |
 | `COC_RATE_LIMIT` | 8 | 上游令牌桶（次/秒），走代理**不要调高** |
@@ -240,10 +240,16 @@ docker compose exec postgres psql -U coc -d coc -c \
 
 ## 5.（无 Token 时的）夹具数据与排行榜
 
-`COC_API_TOKEN` 为空时，后端不打官方 API，由 `app/coc/devfixtures.py` 的
-FixtureTransport 用 `backend/app/coc/fixtures/` 的本地样本应答：**HTTP 契约完全真实，
-数据是手搓占位**（响应自带 `_source`/`_todo` 键自报身份），玩家详情永远返回同一个
-样本玩家——不是 bug，接 Token 后消失。
+`COC_API_TOKEN` 为空（或字面量 `PLACEHOLDER`，大小写不敏感）时，后端不打官方 API，
+由 `app/coc/devfixtures.py` 的 FixtureTransport 用 `backend/app/coc/fixtures/` 的本地样本
+应答：**HTTP 契约完全真实，数据是手搓占位**（响应自带 `_source`/`_todo` 键自报身份），
+玩家详情永远返回同一个样本玩家——不是 bug，接 Token 后消失。
+
+> ⚠️ **只有「空」或「PLACEHOLDER」才算占位。** 填了别的任何值（比如 `your_token_here`），
+> 后端就**走真实上游**了 —— 这时用夹具里的假 tag（`#9QJ8L0` / `#2PP`）查询会得到
+> `404 PLAYER_NOT_FOUND`，那是**正确行为**（官方上确实没有这两个 tag）。
+> 另外注意：`/api/v1/locations` 读的是**数据库**（`locations` 表 + `is_country` 过滤），
+> 不走上游 —— 所以它返回夹具数据**不能**证明后端还在夹具模式。
 
 让排行榜页有东西可看：
 
@@ -272,14 +278,39 @@ docker compose exec api python -m app.cli seed-dev-rankings
    docker compose up -d
    ```
 
-5. 验证切换成功：
+5. 验证切换成功（**必须用真实存在的 tag**，夹具里的 `#9QJ8L0` 在官方上不存在）：
 
    ```bash
-   curl -s http://127.0.0.1/api/v1/players/%239QJ8L0 | head -c 300
-   # 夹具模式：JSON 里有 "_source"/"_todo" 键；真实模式：没有
+   curl -s "http://127.0.0.1/api/v1/clans/%23你的真实部落TAG" | head -c 300
    ```
 
-6. 看采集状态（真实模式下排行榜靠 `app/collector/` 定时采集，不在实时查询路径上）：
+   怎么读结果：
+
+   | 响应 | 含义 |
+   | --- | --- |
+   | 200 + JSON | ✅ 上游通了（Token 有效、白名单 OK），只是之前那个 tag 是假的 |
+   | 403 `accessDenied` | 白名单/Token 问题，见下方诊断表 |
+   | 404 `PLAYER_NOT_FOUND` | 上游通了，但这个 tag 不存在（**正常**，用真 tag 再试） |
+
+   **403 诊断**：
+
+   | 接入方式 | Supercell key 的 Allowed IP 填 |
+   | --- | --- |
+   | 走代理（`COC_BASE_URL=https://cocproxy.royaleapi.dev/v1`） | **代理的 `45.79.218.79`**（不是服务器 IP） |
+   | 直连官方（`COC_BASE_URL` 留空） | 服务器**公网 IP**（`curl -s ifconfig.me`） |
+
+6. **切到真实 Token 后，清掉夹具种子留下的假排行**：
+
+   ```bash
+   docker compose exec postgres psql -U coc -d coc -c "DELETE FROM rankings;"
+   ```
+
+   `seed-dev-rankings` 灌的是**手搓的 3 条假排行**；真实采集按 scope **全量替换**，
+   采到的 scope 会被覆盖，但在第一次采集成功之前，假数据会**冒充真榜单**被吐出去。
+   `locations` 表不用清 —— 那 4 行用的都是真实官方 id（Global / Bosnia / China /
+   International），`static_data` 采集会 upsert 补齐其余地区。
+
+7. 看采集状态（真实模式下排行榜靠 `app/collector/` 定时采集，不在实时查询路径上）：
 
    ```bash
    curl -s http://127.0.0.1/api/v1/meta/freshness | python3 -m json.tool
@@ -291,7 +322,125 @@ docker compose exec api python -m app.cli seed-dev-rankings
 > 红线：代理是社区免费共享的，**不要把 `COC_RATE_LIMIT` 调高**；把它当成"救慢采集"
 > 的手段 = 把成本转嫁给运维代理的人。
 
-## 7. 冒烟验证（假设服务器 IP 是 `1.2.3.4`）
+8. **不想等 cron？手动采一次**（详见 §7）：
+
+   ```bash
+   docker compose exec api python -m app.cli collect rankings
+   ```
+
+   换好 Token 后第一次采集不必干等下一个 cron 点（rankings 最长 6 小时）。
+
+## 7. 日常运维
+
+### 改了 `.env` 之后：必须 `up -d`，不能 `restart`
+
+**`.env` 是给宿主机上的 compose 读的**：compose 解析完再把值**注入**容器环境变量，
+`.env` 文件本身**没有**挂进容器（`app/config.py` 的 `env_file=".env"` 在容器里没有文件可读）。
+所以：
+
+| 命令 | 新 `.env` 生效吗 | 说明 |
+| --- | --- | --- |
+| `docker compose up -d` | ✅ | compose 比对解析后的配置，**变了就重建**该容器 |
+| `docker compose restart` | ❌ | 只重启进程，**沿用容器创建时的环境变量** |
+| `docker compose down && docker compose up -d` | ✅ | 等价但更慢（`down` 不删卷，除非加 `-v`） |
+
+**只有受影响的服务会被重建**：只改 `COC_API_TOKEN` → 只重建 api；改 `POSTGRES_PASSWORD`
+→ postgres 与 api 都要重建（`DATABASE_URL` 是 compose 拼出来的，跟着变）。
+
+改完验证：
+
+```bash
+docker compose ps                                # 看 CREATED 时间变了没有
+docker compose exec api printenv COC_API_TOKEN  # 看容器里真实拿到的值
+```
+
+> `docker compose config` 也能看解析后的值，但它会把**密钥明文**打出来 ——
+> 别把它的输出贴进聊天或工单。
+
+### 改配置 ≠ 改环境变量
+
+| 改了什么 | 要做什么 |
+| --- | --- |
+| `.env` 里的变量 | `docker compose up -d`（重建容器） |
+| `deploy/nginx.conf` | `docker compose exec web nginx -s reload`（bind mount，改完即生效，**不用重建**） |
+| 后端代码 | `docker compose build api && docker compose up -d` |
+| 前端代码 | `docker compose build web && docker compose up -d` |
+| 数据库结构 | `docker compose exec api alembic upgrade head` |
+
+### 日志与状态
+
+```bash
+docker compose ps                       # 三个服务的状态
+docker compose logs -f api              # 应用日志（**服务名是 api，不是 nginx**）
+docker compose logs -f web              # nginx 访问日志
+docker compose logs --tail=100 api      # 最近 100 行
+```
+
+### 手动触发一次采集
+
+调度器按 cron 触发（`rankings` 每 6 小时、`leagues`/`seasons` 每小时、`static_data` 每天）。
+刚换好真实 Token 时不必干等：
+
+```bash
+docker compose exec api python -m app.cli collect rankings     # 也可 static_data / leagues / seasons
+docker compose exec api python -m app.cli collect --help
+```
+
+它走的是**和调度器完全同一条路径**（`app.collector.service.run_job`）：同样的运行留痕、
+同样的部分失败记账、同样的令牌桶。输出 `采集 job rankings -> success` 即完成；
+`partial` 表示部分地区失败（明细看 `collector_runs.error`）。
+
+### 备份与恢复
+
+脚本：`backend/deploy/backup.sh`（数据库全量 + 媒体目录 + 自动清理 14 天前的旧备份）。
+它已适配本仓库：**自动 cd 到仓库根**再执行 `docker compose`；媒体卷名默认
+`cocpersonal_media`（compose 项目名是 cocpersonal），可用 `MEDIA_VOLUME` 覆盖。
+
+```bash
+# 手动跑一次（任意目录都行）
+/opt/cocpersonal/COCPersonal/backend/deploy/backup.sh
+
+# crontab（错开整点，避免与上游/任务高峰撞在一起）
+crontab -e
+# 17 4 * * * /opt/cocpersonal/COCPersonal/backend/deploy/backup.sh >> /var/log/coc-backup.log 2>&1
+```
+
+**不清理的话备份会把磁盘吃满**，而磁盘满的直接后果是**数据库写不进去** ——
+现象是「服务看着正常但数据不再更新」，比没有备份更难排查（脚本默认保留 14 天）。
+
+恢复（`pg_dump --clean --if-exists` 是**整库替换**，不是合并）：
+
+```bash
+gunzip -c /opt/cocpersonal/COCPersonal/backups/db-2026-10-21.sql.gz | \
+  docker compose exec -T postgres psql -U coc -d coc
+```
+
+> 恢复前先把当前库再备份一份。恢复是替换式的，别指望与新数据合并。
+
+### 升级发版
+
+```bash
+cd /opt/cocpersonal/COCPersonal
+git pull
+docker compose up -d --build          # 只改 .env/nginx.conf 时不必 --build
+docker compose exec api alembic upgrade head
+```
+
+- **顺序**：备份 → `git pull` → 重建 → `up -d` → 建表。
+- **改了 `.env` 必须 `up -d` 重建**（见本节开头）。
+- 迁移出错时对照两个 revision：`alembic current`（库里到哪了）与
+  `alembic heads`（代码里最新到哪了）；`alembic heads` 出现**两个** head
+  = 有人手写了迁移没接对。
+
+### 限流与缓存观察
+
+对外限流 `RATE_LIMIT_PER_MINUTE=60`（每 IP 每分钟）；`/healthz` 与 `/readyz` 不计桶。
+被限流不用重启，等一分钟即恢复；`X-Forwarded-For` 已透传，所以按真实客户端 IP 计数。
+
+缓存状态看响应里的 `meta.cache`（`HIT` / `MISS` / `STALE`），TTL 看 `meta.ttl_seconds`
+（详情类：部落/玩家 300s、战报 120s）。
+
+## 8. 冒烟验证（假设服务器 IP 是 `1.2.3.4`）
 
 | # | 操作 | 期望 |
 | --- | --- | --- |
@@ -310,7 +459,7 @@ docker compose exec api python -m app.cli seed-dev-rankings
 > 在本机 Vue+uvicorn 组合下已逐项实测通过（2026-10-17，记录于
 > `docs/superpowers/plans/2026-10-16-cocpersonal-mvp.md`）；容器环境下按上表复核。
 
-## 8. HTTPS 升级（可选，默认 HTTP-only）
+## 9. HTTPS 升级（可选，默认 HTTP-only）
 
 默认单端口 80（`deploy/nginx.conf` 末尾有 HTTPS 注释块）。需要域名（§1 可选项）：
 
@@ -373,7 +522,7 @@ docker compose exec api python -m app.cli seed-dev-rankings
 > 启用时按【首跑核对】心态逐条验证。小程序风格的"先 HTTP 起服务再签证书"顺序
 > 完全适用：80 端口先跑起来，webroot 才写得进验证文件。
 
-## 9. 首跑验收清单（compose 从未在本机真实 up 过）
+## 10. 首跑验收清单（compose 从未在本机真实 up 过）
 
 > **首次真实 `up` 已于 2026-10-20 在 Linux 服务器上跑通**，第 1–5 项已逐条核对通过
 > （两个镜像构建完成、三容器 healthy、`alembic current` = `d4c8a36b19e6 (head)`、
@@ -392,14 +541,14 @@ docker compose exec api python -m app.cli seed-dev-rankings
 | 4 | 迁移 | `docker compose exec api alembic current` | `d4c8a36b19e6 (head)`【已验证·本机同迁移链】 |
 | 5 | 表数 | information_schema 计数 | 28（§3）【已验证·本机】 |
 | 6 | 升级数据 | 2073 行按四类分布 | §4【已验证·本机】 |
-| 7 | 探针 | `/healthz` `/readyz` | §7 第 1/2 行 |
+| 7 | 探针 | `/healthz` `/readyz` | §8 第 1/2 行 |
 | 8 | 前端 | `curl -sI http://127.0.0.1/` | 200, `text/html` |
-| 9 | 缓存 | `meta.cache` MISS→HIT | §7 第 6 行 |
-| 10 | 后台 | SQLAdmin 登录 | §7 第 8 行 |
+| 9 | 缓存 | `meta.cache` MISS→HIT | §8 第 6 行 |
+| 10 | 后台 | SQLAdmin 登录 | §8 第 8 行 |
 | 11 | 镜像依赖 | `docker compose exec api python -c "import itsdangerous"` | 无报错（镜像里只有声明过的依赖，见 §3 提醒） |
 | 12 | `.env` 插值 | `docker compose config 2>&1 \| grep "not set"` | **无输出**——有输出说明某个值里的 `$xxx` 被静默截断了（§2 陷阱） |
 
-## 10. 常见故障速查
+## 11. 常见故障速查
 
 | 症状 | 检查点 |
 | --- | --- |
@@ -417,12 +566,12 @@ docker compose exec api python -m app.cli seed-dev-rankings
 | 排行榜空 | 夹具模式没跑 §5；真实模式 `meta/freshness` 看采集时间和 `collectorRuns` |
 | 磁盘满 | `backup.sh` 未设时备份会吃满磁盘——恢复它或手动清理（磁盘满的表象是"服务正常但数据不再更新"） |
 
-## 11. 已知限制
+## 12. 已知限制
 
 | # | 内容 |
 | --- | --- |
-| 1 | `docker compose up` 在本机从未真实执行（无 Docker）；§9 清单必做 |
+| 1 | `docker compose up` 在本机从未真实执行（无 Docker）；§10 清单必做 |
 | 2 | 夹具样本是占位数据（`_source`/`_todo` 自报），拿真实 Token 后替换 |
-| 3 | `sqlalchemy` 锁 `<2.1`：升依赖时别放宽（见 §10） |
+| 3 | `sqlalchemy` 锁 `<2.1`：升依赖时别放宽（见 §11） |
 | 4 | 单 worker/单副本：扩展前提是把限流、缓存、调度换成共享实现 + `APP_ROLE` 拆分 |
-| 5 | HTTPS 流程从未真实执行（§8） |
+| 5 | HTTPS 流程从未真实执行（§9） |

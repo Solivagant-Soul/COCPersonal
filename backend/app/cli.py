@@ -1,7 +1,7 @@
 """运维 CLI。
 
-命令有两个：``import-game-data``（导入升级数据）与 ``seed-dev-rankings``
-（开发期灌入榜单夹具数据，无真实 Token 时用）。
+命令有三个：``import-game-data``（导入升级数据）、``seed-dev-rankings``
+（开发期灌入榜单夹具数据，无真实 Token 时用）、``collect``（手动跑一次采集 job）。
 
 原计划里还有 ``create-admin``，已按 R3 裁定删除 —— 后台认证走环境变量
 ``ADMIN_USERNAME`` / ``ADMIN_PASSWORD``，规格中不存在任何管理员表。保留那个
@@ -56,7 +56,28 @@ def build_parser() -> argparse.ArgumentParser:
         default=32000001,
         help="地区 ID（默认 32000001 = China）",
     )
+
+    col = sub.add_parser(
+        "collect",
+        help="手动跑一次采集 job（不必等 cron）",
+    )
+    col.add_argument(
+        "job",
+        choices=sorted(_job_names()),
+        help="采集 job 名（见 app.collector.service.JOBS）",
+    )
     return parser
+
+
+def _job_names() -> list[str]:
+    """可用的采集 job 名。
+
+    从 ``app.collector.service.JOBS`` 取 —— **不另抄一份**：抄一份的话，
+    以后加了新 job 而忘了改这里，就会出现「文档里有、命令却跑不了」的情况。
+    """
+    from app.collector.service import JOBS
+
+    return sorted(JOBS)
 
 
 async def cmd_import_game_data(
@@ -132,6 +153,23 @@ async def cmd_seed_dev_rankings(location: int = 32000001) -> int:
     return counts.get("rankings", 0)
 
 
+async def cmd_collect(job: str) -> int:
+    """手动跑一次采集 job。返回 0（全部成功）/ 1（部分失败或全挂）。
+
+    **为什么需要它**：调度器按 cron 触发（rankings 每 6 小时、leagues/seasons 每小时），
+    刚换好真实 Token 时最长要等 6 小时才有第一批真数据。采集是幂等且按 scope 全量替换的，
+    随时手动补一次无妨。
+
+    走的是**和调度器完全同一条路径**（``app.collector.service.run_job``）：
+    同样的运行留痕、同样的部分失败记账、同样的令牌桶。
+    """
+    from app.collector.service import run_job
+
+    status = await run_job(job)
+    print(f"采集 job {job} -> {status}")
+    return 0 if status == "success" else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(
@@ -145,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "seed-dev-rankings":
         count = asyncio.run(cmd_seed_dev_rankings(location=args.location))
         return 0 if count >= 0 else 1
+    if args.command == "collect":
+        return asyncio.run(cmd_collect(job=args.job))
     return 1
 
 

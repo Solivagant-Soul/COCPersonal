@@ -690,7 +690,7 @@ cd frontend; npm run dev                                  # http://localhost:517
    （cron 调用时 cwd 是 `$HOME`，`docker compose` 会找不到 compose 文件）。→
    改为自 `cd` 到脚本位置的上两级 + `MEDIA_VOLUME` 可覆盖；`bash -n` 校验。
    `certbot-renew.sh` **不动**（引用不存在的 `certbot`/`nginx` 服务，仅当遗留思路参考，
-   新文档 §8 给出本仓库等价做法）。
+   新文档 §9 给出本仓库等价做法）。
 3. **文档里所有数字都要能复现**，写作前实测：迁移链单 head `d4c8a36b19e6`；
    public schema 表数 **28**（27 张业务表 + alembic_version，旧文档的"27 张表"与之
    自洽）；`upgrade_items` 导入 **2073** 行（equipment 850 / troop 599 / hero 513 /
@@ -698,7 +698,7 @@ cd frontend; npm run dev                                  # http://localhost:517
    rankings 每 6h（:13）、leagues/seasons 每 1h（:41/:29）、static_data 每天 03:17 UTC
    （全部错开整点）。
 4. **诚实分级是本文的第一设计**：所有命令分 **【已验证】**（本机同代码路径实跑）与
-   **【首跑核对】**（compose 从未在本机 up 过，首次部署按 §9 10 项清单逐条核对回填）。
+   **【首跑核对】**（compose 从未在本机 up 过，首次部署按 §10 10 项清单逐条核对回填）。
    不假装文档=已验证的部署。
 5. README「已知限制」同步收口：浏览器 DOM 冒烟已补做通过（此前那条欠账已出账），
    未完成项只剩 `docker compose up`。
@@ -861,9 +861,54 @@ BuildKit（`docker:default` 驱动 + `=>` 进度格式），所以 cache mount �
 
 **处置（文档化，不改代码）**：`docs/deployment.md` §2 新增「改 `.env` 里的密码 ≠ 改了数据库
 的密码」小节 —— 改密码必须 `ALTER USER` + 改 `.env` + `up -d` 三步一起做；
-§10 排障表加对应条目。**没有代码可改**：这是 postgres 官方镜像的既定行为，
+§11 排障表加对应条目。**没有代码可改**：这是 postgres 官方镜像的既定行为，
 能做的只是别让人踩。
 
 **顺带说明**：本次同时验证了 Task 15 的修复 —— 夹具确实进了镜像
 （`/opt/venv/lib/python3.12/site-packages/app/coc/fixtures`，5 份齐全）。
+
+## Task 18：切到真实 Token 后的运维闭环（2026-10-21）
+
+**背景**：用户在服务器上填了真实 `COC_API_TOKEN` + `COC_BASE_URL`（RoyaleAPI 代理），
+后端从「夹具模式」切到「真实上游模式」。由此暴露三件事：
+
+1. **夹具 tag 的 404 是正确行为**：`#9QJ8L0` 是手搓的假 tag，官方上不存在。
+   判定「是否还在夹具模式」要看 `COC_API_TOKEN` 是否为空/字面量 `PLACEHOLDER`
+   —— `app/coc/devfixtures.py::is_placeholder_token`。**注意 `/api/v1/locations`
+   读的是数据库（`locations` 表 + `is_country` 过滤），不走上游**，
+   所以它返回夹具数据**不能**用来判断模式。
+2. **夹具种子留下的假排行必须清掉**：`seed-dev-rankings` 灌的 3 条是手搓数据，
+   真实采集按 scope 全量替换，但在第一次采集成功前它们会**冒充真榜单**被吐出去
+   → 部署文档 §6 增加 `DELETE FROM rankings;` 这一步。
+   （`locations` 表不用清：那 4 行用的都是真实官方 id，`static_data` 采集会 upsert 补齐。）
+3. **没有「立刻采一次」的命令**：调度器按 cron 触发（rankings 每 6 小时），
+   刚换好 Token 最长要等 6 小时才有第一批真数据。
+
+**处置**：
+
+1. **新增 `python -m app.cli collect <job>`**：手动跑一次采集 job
+   （`static_data` / `rankings` / `leagues` / `seasons`）。
+   走的是**和调度器完全同一条路径**（`app.collector.service.run_job`）——
+   同样的运行留痕、同样的部分失败记账、同样的令牌桶；手工另写一套会让两种口径分叉。
+   job 名**从 `JOBS` 取**（不另抄一份名单，否则加了新 job 忘了改这里就成了
+   「文档里有、命令跑不了」）。`partial` 也算失败（退出码 1），脚本里才能判。
+   新增测试 `tests/test_cli_collect.py`（7 条）；同时更新既有
+   `test_cli_exposes_expected_commands` 的命令集合期望（三个）。
+2. **部署手册补 §7「日常运维」**（此前缺整节）：`.env` 变更规则、日志/状态、
+   手动采集、备份与恢复（含 crontab）、升级发版、限流与缓存观察。
+3. **章节重编号**：插入 §7 后，原 §7~§11 顺延为 §8~§12，并**同步全仓的 `§` 交叉引用**
+   （`docs/deployment.md` / `AGENTS.md` / `README.md` / 本账本）。
+
+**「改了 `.env` 要不要重启」—— 写进手册的那条规则**：
+
+| 命令 | 新 `.env` 生效吗 |
+| --- | --- |
+| `docker compose up -d` | ✅ 比对解析后的配置，变了就**重建**该容器 |
+| `docker compose restart` | ❌ 只重启进程，**沿用创建时的环境变量** |
+
+原因：`.env` 是宿主机上 compose 读的，值被**注入**容器环境变量，文件本身没挂进容器。
+只有**受影响的服务**会重建（只改 `COC_API_TOKEN` → 只重建 api；
+改 `POSTGRES_PASSWORD` → postgres 与 api 都重建，因为 `DATABASE_URL` 是拼出来的）。
+
+**验证**：513 passed（506 + 7 条新测试）；CLI 实测 `collect --help` 列出四个 job。
 

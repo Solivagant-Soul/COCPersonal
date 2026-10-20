@@ -380,7 +380,7 @@ def test_read_raw_json_parses_a_normal_layout(tmp_path):
 
 
 def test_cli_exposes_expected_commands():
-    """命令集合恰为这两个：导入升级数据 + 开发期榜单种子。
+    """命令集合恰为这三个：导入升级数据 + 开发期榜单种子 + 手动采集。
 
     原计划里还有 create-admin，但后台认证走环境变量且规格中不存在管理员表 ——
     保留它等于凭空引入一张表或第二条凭据来源（由下方
@@ -388,13 +388,20 @@ def test_cli_exposes_expected_commands():
 
     seed-dev-rankings 是 COCPersonal 规格新增的**开发期**命令：没有真实 Token
     时把榜单夹具灌进库，排行榜页才有数据可看。
+
+    collect 是**运维**命令：换好真实 Token 后不必干等 cron（rankings 每 6 小时）
+    就能立刻采一次；它走的是调度器同一条路径（app.collector.service.run_job）。
     """
     from app.cli import build_parser
 
     parser = build_parser()
     actions = [a for a in parser._actions if a.dest == "command"]
     assert len(actions) == 1
-    assert set(actions[0].choices) == {"import-game-data", "seed-dev-rankings"}
+    assert set(actions[0].choices) == {
+        "import-game-data",
+        "seed-dev-rankings",
+        "collect",
+    }
 
 
 def test_cli_has_no_create_admin_command():

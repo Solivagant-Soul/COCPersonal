@@ -104,7 +104,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 4. 证书续期仿照 `backend/deploy/certbot-renew.sh` 写一份（**注意**：那个脚本引用的
    `certbot`/`nginx` 服务在本仓库 compose 里不存在，只抄思路）
 
-逐步命令见 `docs/deployment.md` §8。
+逐步命令见 `docs/deployment.md` §9。
 
 ## 数据与夹具（还没有真实 Token 时）
 
@@ -124,7 +124,7 @@ Allowed IP 填代理的 `45.79.218.79`（不是服务器 IP）。
 
 - **`docker compose up` 从未在本机跑过**：本机 Docker 不可用，这里只验证到配置与构建产物
   的正确性（69 项静态校验 + 镜像构建所需的文件齐备）。**第一次 `up` 必须在 Linux 机器上做**，
-  验收清单在 `docs/deployment.md` §9。浏览器 DOM 冒烟已于 2026-10-17 用本机
+  验收清单在 `docs/deployment.md` §10。浏览器 DOM 冒烟已于 2026-10-17 用本机
   uvicorn + vite 组合补做通过（此前受 AdGuard 系统代理干扰，详见计划文档「联调记录」）。
 - **排行榜依赖采集写库**：种子脚本只造夹具数据；真实排名需要 Token + 采集器。
 - 前端只按 PC 浏览器设计（Element Plus 桌面端），没有做手机端响应式。
