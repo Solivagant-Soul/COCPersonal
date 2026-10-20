@@ -36,8 +36,12 @@ def _name(item: dict[str, Any], limit: int = 100) -> str:
 
 def _icon_urls(item: dict[str, Any]) -> dict | None:
     """图标整体存 JSONB：Supercell 的 small/medium/large 三档结构会变，
-    拆成三列就得为每次尺寸调整做一次迁移。"""
-    icon = item.get("icon")
+    拆成三列就得为每次尺寸调整做一次迁移。
+
+    **字段名是 ``iconUrls``（官方），不是 ``icon``。** 读错键不会报错，只会让
+    整张维表的图标列静默变成 NULL —— 2026-10-21 线上核对时发现的一类问题。
+    """
+    icon = item.get("iconUrls")
     return icon if isinstance(icon, dict) else None
 
 
@@ -67,7 +71,9 @@ async def collect_static_data(
 
     tiers = await coc.get_leaguetiers(client)
     tier_rows = []
-    for item in (tiers or {}).get("tiers") or []:
+    # 官方 ``/leaguetiers`` 的响应是 ``{"items": [...]}``（不是 ``tiers``）：
+    # 读错键的后果是一行都写不进去，而 job 照样报 success。
+    for item in (tiers or {}).get("items") or []:
         tid = _int(item.get("id"))
         if tid is None:
             continue
@@ -92,7 +98,8 @@ async def _collect_labels(
 ) -> int:
     assert kind in LABEL_KINDS, f"未知 label kind: {kind}"
     rows = []
-    for item in (payload or {}).get("labels") or []:
+    # 官方 ``/labels/clans`` 与 ``/labels/players`` 都返回 ``{"items": [...]}``。
+    for item in (payload or {}).get("items") or []:
         lid = _int(item.get("id"))
         if lid is None:
             continue

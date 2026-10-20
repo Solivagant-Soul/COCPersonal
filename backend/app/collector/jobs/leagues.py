@@ -36,16 +36,19 @@ async def collect_leagues(
     ):
         payload = await fetch(client)
         rows = []
-        for item in (payload or {}).get("leagues") or []:
+        # 三类联赛列表（war/capital/builder_base）的响应形状都是
+        # ``{"items": [...]}``；``iconUrls`` 才是图标字段。
+        for item in (payload or {}).get("items") or []:
             lid = _int(item.get("id"))
             if lid is None:
                 continue
+            icon = item.get("iconUrls")
             rows.append(
                 League(
                     id=lid,
                     kind=str(kind),
                     name=(item.get("name") or "")[:100],
-                    icon_urls=item.get("icon") if isinstance(item.get("icon"), dict) else None,
+                    icon_urls=icon if isinstance(icon, dict) else None,
                 )
             )
         counts[str(kind)] = await upsert_all(session, League, rows, ["id", "kind"])

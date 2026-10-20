@@ -138,11 +138,15 @@ async def test_collect_static_data_populates_locations(session, settings):
 
 
 async def test_collect_static_data_stores_label_kind(session, settings):
-    """labels 表按 kind 区分 clan/player，id 在两类间可重复 —— 必须写对 kind。"""
+    """labels 表按 kind 区分 clan/player，id 在两类间可重复 —— 必须写对 kind。
+
+    响应形状以官方为准：``{"items": [...]}``，不是 ``{"labels": [...]}``
+    （2026-10-21 线上实测：按 ``labels`` 读会让这个 job 永远写 0 行却报 success）。
+    """
     client = FakeClient(
         routes={
-            "/labels/clans": {"labels": [{"id": 1, "name": "ClanL"}]},
-            "/labels/players": {"labels": [{"id": 1, "name": "PlayerL"}]},
+            "/labels/clans": {"items": [{"id": 1, "name": "ClanL"}]},
+            "/labels/players": {"items": [{"id": 1, "name": "PlayerL"}]},
         }
     )
     await run_job("static_data", settings, session, client=client)
@@ -153,17 +157,56 @@ async def test_collect_static_data_stores_label_kind(session, settings):
     assert {(r.kind, r.name) for r in rows} == {("clan", "ClanL"), ("player", "PlayerL")}
 
 
+async def test_collect_static_data_stores_league_tiers_with_icons(session, settings):
+    """``/leaguetiers`` 的响应是 ``{"items": [...]}``，图标字段是 ``iconUrls``。
+
+    读错键的后果不是报错，而是**表里一行都没有、job 却报 success** —— 只有断言
+    行数才能抓住（2026-10-21 之前它就是读的 ``tiers``，一直写 0 行）。
+    """
+    client = FakeClient(
+        routes={
+            "/leaguetiers": {
+                "items": [
+                    {
+                        "id": 29000020,
+                        "name": "Legend League",
+                        "iconUrls": {"small": "https://example.test/s.png"},
+                    }
+                ]
+            }
+        }
+    )
+    await run_job("static_data", settings, session, client=client)
+
+    from app.db.models import LeagueTier
+
+    rows = (await session.execute(select(LeagueTier))).scalars().all()
+    assert [(r.id, r.name) for r in rows] == [(29000020, "Legend League")]
+    assert rows[0].icon_urls == {"small": "https://example.test/s.png"}
+
+
 # --------------------------------------------------------------------------- #
 # 联赛
 # --------------------------------------------------------------------------- #
 
 
 async def test_collect_leagues_upserts_all_three_kinds(session, settings):
+    """三类联赛列表的响应都是 ``{"items": [...]}``，图标字段是 ``iconUrls``。"""
     client = FakeClient(
         routes={
-            "/warleagues": {"leagues": [{"id": 48000000, "name": "Crystal League I"}]},
-            "/capitalleagues": {"leagues": [{"id": 50000000, "name": "Capital League I"}]},
-            "/builderbaseleagues": {"leagues": [{"id": 19000000, "name": "Builder League I"}]},
+            "/warleagues": {
+                "items": [
+                    {
+                        "id": 48000000,
+                        "name": "Crystal League I",
+                        "iconUrls": {"small": "https://example.test/w.png"},
+                    }
+                ]
+            },
+            "/capitalleagues": {"items": [{"id": 50000000, "name": "Capital League I"}]},
+            "/builderbaseleagues": {
+                "items": [{"id": 19000000, "name": "Builder League I"}]
+            },
         }
     )
     await run_job("leagues", settings, session, client=client)
@@ -172,8 +215,10 @@ async def test_collect_leagues_upserts_all_three_kinds(session, settings):
     count = (await session.execute(select(func.count()).select_from(League))).scalar_one()
     assert count == 3, "重复运行不能让联赛行数翻倍"
 
-    kinds = {(r.kind) for r in (await session.execute(select(League))).scalars().all()}
-    assert kinds == {"war", "capital", "builder_base"}
+    rows = (await session.execute(select(League))).scalars().all()
+    assert {r.kind for r in rows} == {"war", "capital", "builder_base"}
+    war = next(r for r in rows if r.kind == "war")
+    assert war.icon_urls == {"small": "https://example.test/w.png"}
 
 
 # --------------------------------------------------------------------------- #
@@ -184,7 +229,7 @@ async def test_collect_leagues_upserts_all_three_kinds(session, settings):
 async def test_collect_seasons_writes_season_rows_and_current_season_rankings(session, settings):
     client = FakeClient(
         routes={
-            "/warleagues": {"leagues": [{"id": 48000000, "name": "Crystal League I"}]},
+            "/warleagues": {"items": [{"id": 48000000, "name": "Crystal League I"}]},
             # 赛季名次（items）与赛季清单（seasons）路径只差一段，必须按完整路径配
             "/leagues/48000000/seasons/2026-09": {
                 "items": [{"tag": "#P1", "name": "P1", "rank": 1}]
@@ -223,7 +268,7 @@ async def test_collect_seasons_does_not_fetch_rankings_for_historical_seasons(se
     """
     client = FakeClient(
         routes={
-            "/warleagues": {"leagues": [{"id": 48000000, "name": "L"}]},
+            "/warleagues": {"items": [{"id": 48000000, "name": "L"}]},
             "/leagues/48000000/seasons/2026-09": {"items": []},
             "/leagues/48000000/seasons": {
                 "seasons": [

@@ -47,12 +47,13 @@ async def collect_seasons(
     now = now or dt.datetime.now(dt.UTC)
     failures: list[str] = []
     leagues = await coc.get_warleagues(client)
-    # 响应形状是 {"leagues": [...]}。**不能写成 or []** —— 官方出错时返回
-    # {"error": ...} 这种 dict，取不到 leagues 会静默变成"这轮没有联赛"，
-    # 于是 Season 表不更新而 job 报 success。取不到就必须当失败。
-    league_rows = (leagues or {}).get("leagues")
+    # 响应形状是 {"items": [...]}（官方；**不是** {"leagues": [...]}）。
+    # **不能写成 or []** —— 官方出错时返回 {"error": ...} 这种 dict，
+    # 取不到 items 会静默变成"这轮没有联赛"，于是 Season 表不更新而 job 报 success。
+    # 取不到就必须当失败。
+    league_rows = (leagues or {}).get("items")
     if league_rows is None:
-        failures.append(f"warleagues 响应缺少 leagues 字段: {str(leagues)[:200]}")
+        failures.append(f"warleagues 响应缺少 items 字段: {str(leagues)[:200]}")
         logger.warning("%s", failures[-1])
         await session.commit()
         return {
