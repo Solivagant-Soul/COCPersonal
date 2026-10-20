@@ -108,7 +108,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 ## 数据与夹具（还没有真实 Token 时）
 
-`COC_API_TOKEN` **留空或为占位值**时，后端不打官方 API，改由 `backend/tests/fixtures/`
+`COC_API_TOKEN` **留空或为占位值**时，后端不打官方 API，改由 `backend/app/coc/fixtures/`
 的本地样本应答（`backend/app/coc/devfixtures.py` 的 `FixtureTransport`）。这样在没有
 Supercell Token 的情况下，整站也能跑通、且仍然走真实的后端响应契约。
 

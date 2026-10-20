@@ -1,4 +1,4 @@
-"""dev 夹具上游：没有真实 Supercell Token 时，用 ``tests/fixtures/`` 里的
+"""dev 夹具上游：没有真实 Supercell Token 时，用 ``app/coc/fixtures/`` 里的
 placeholder 响应顶替官方 API。
 
 **只在开发期启用**：``COC_API_TOKEN`` 为空或等于占位值（``PLACEHOLDER``）时，
@@ -19,8 +19,12 @@ from typing import Any
 
 import httpx
 
-#: 夹具目录。``app/coc/devfixtures.py`` → parents[2] = backend/ 根。
-FIXTURES_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+#: 夹具目录。**必须放在包内**（``app/coc/fixtures/``）：生产镜像里应用是
+#: ``pip install .`` 装进 site-packages 的，仓库相对路径（``../tests/fixtures``）
+#: 在镜像里根本不存在 —— 这条已经咬过两次（``seed-dev-rankings`` 与夹具上游
+#: 在镜像里双双 ``FileNotFoundError``，后者等于**无 Token 部署的所有上游读取全 500**）。
+#: 包内定位 + ``pyproject.toml`` 的 package-data 声明，夹具才会随 wheel 一起进镜像。
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 #: 视为"没有真实 token"的取值。大小写不敏感，前后空白忽略。
 _PLACEHOLDER_TOKENS = frozenset({"", "PLACEHOLDER"})

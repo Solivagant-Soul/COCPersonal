@@ -58,6 +58,6 @@ npm run dev       # :5173，/api 已反代到 :8000
   （2026-10-20）。首跑暴露并修掉了「镜像缺 `itsdangerous`」的部署缺陷（见账本 Task 14）。
   **本机仍无 Docker**（固件层关虚拟化），所以「改完部署资产后本机无法自证」这条约束依旧成立。
 - ~~**浏览器 DOM 手测未在本机完成**~~ → **已补做通过**（2026-10-17，见计划文档 Task 9 Step 3）。
-- **`backend/tests/fixtures/` 四份样本是手搓占位**（带 `_source` / `_todo` 自报身份），
+- **`backend/app/coc/fixtures/` 四份样本是手搓占位**（带 `_source` / `_todo` 自报身份），
   拿到真实 Supercell Token 后要换掉。
 - **排行榜是夹具种子数据**，真实排名需要 Token + 采集器。

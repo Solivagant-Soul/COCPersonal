@@ -55,7 +55,7 @@ def _error_json(status: int, code: str, message: str) -> JSONResponse:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     # 没有真实 Token 时给 client 注入夹具上游（开发期；见 app/coc/devfixtures.py）。
-    # 走的是同一个 CocClient，只是最底层的字节来源换成 tests/fixtures。
+    # 走的是同一个 CocClient，只是最底层的字节来源换成 app/coc/fixtures。
     transport = (
         FixtureTransport() if is_placeholder_token(settings.coc_api_token) else None
     )

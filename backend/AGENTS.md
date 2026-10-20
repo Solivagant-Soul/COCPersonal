@@ -71,6 +71,15 @@ Start-Process "C:\pgportable\pgsql\bin\postgres.exe" `
   的硬需求，漏声明就等于镜像起不来。
   守门测试：`tests/test_runtime_deps.py`（把孤儿包屏蔽掉再 import 一次应用，复现镜像环境）。
   **加了新依赖必须进 `dependencies`；靠别人的 extra 顺带装到的东西不算。**
+- **夹具是运行时资产，必须住在包内并声明成 package-data。**
+  `app/coc/devfixtures.py`（无 Token 时的上游替身）与 `app/devseed.py`（灌排行种子）
+  都在**运行时**读夹具，而生产镜像只装 `app/` 包 —— 夹具放 `tests/` 下时，镜像里
+  两者双双 `FileNotFoundError`：**无 Token 的部署等于所有上游读取全 500**，
+  `seed-dev-rankings` 也跑不了（已真实发生过两次）。
+  现在夹具在 `app/coc/fixtures/`，路径由 `devfixtures.FIXTURES_DIR` 唯一定义
+  （`devseed` 直接复用它，别再自己算路径），并由 `pyproject.toml` 的
+  `[tool.setuptools.package-data]` 声明随 wheel 分发。
+  守门测试：`tests/test_runtime_deps.py::test_fixtures_are_packaged_with_the_app`。
 - **测试环境变量必须在任何 `app.*` 被 import 之前设置。** `get_settings()` 带 `lru_cache`，
   首次调用即固化。`tests/conftest.py` 因此在模块顶层（import 任何 app 模块之前）调
   `set_test_env()`；fixture 里那次调用是冗余兜底。改动它之前先读那段注释。
@@ -190,11 +199,13 @@ Start-Process "C:\pgportable\pgsql\bin\postgres.exe" `
 
 一期代码已完成，但以下**验收/资产项仍挂着**，不要误以为"全绿即全好"：
 
-- **`tests/fixtures/` 四份响应样本是手搓占位**，每个带 `_source` + `_todo` 两个键自报身份。
-  拿到真实 Supercell Token 后要换成真实响应，并删掉 `tests/fixtures/test_samples.py`
+- **`app/coc/fixtures/` 五份响应样本是手搓占位**，每个带 `_source` + `_todo` 两个键自报身份。
+  拿到真实 Supercell Token 后要换成真实响应，并删掉 `tests/test_fixture_samples.py`
   里的 `test_samples_are_marked_placeholders`。
 - **验收项 A2 / B2**（`docker compose up -d` 从零启动）：本机虚拟化在固件层关闭（R12），
-  Docker/WSL 不可用，只能用 `C:\pgportable` 的本地 PG 替代，**这条从未在本机跑过**。
+  Docker/WSL 不可用，只能用 `C:\pgportable` 的本地 PG 替代；**这条已于 2026-10-20
+  在一台 Linux 服务器上真实跑通**（首跑还揪出两个部署缺陷：镜像缺 `itsdangerous`、
+  夹具没随包分发，见计划文档账本 Task 14 / Task 15）。本机仍然跑不了。
 - **验收项 A3 / B5**（手动冒烟）与 **B4**（后台补 `name_zh`、录公告、审投稿）：
   需真实 Token 与真实数据。
 - 本地 `.env` 未设 `ADMIN_USERNAME` / `ADMIN_PASSWORD`（代码按 `os.environ.get(..., "")`

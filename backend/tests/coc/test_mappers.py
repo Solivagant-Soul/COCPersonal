@@ -15,6 +15,7 @@ import json
 from datetime import UTC
 from pathlib import Path
 
+from app.coc.devfixtures import FIXTURES_DIR
 from app.coc.mappers import (
     CLAN_TYPES,
     _enum,
@@ -28,7 +29,8 @@ from app.db.models import Clan, ClanCapital, ClanMember, Player
 
 NOW = dt.datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
 
-FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+#: 夹具在**包内**（``app/coc/fixtures/``）——生产镜像只装 app 包，tests/ 不进镜像。
+FIXTURES = FIXTURES_DIR
 
 
 def _load(name: str) -> dict:

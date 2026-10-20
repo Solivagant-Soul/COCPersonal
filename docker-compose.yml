@@ -43,7 +43,7 @@ services:
       # 镜像 CMD 固定 --workers 1，不要为了性能加副本/worker。
       APP_ROLE: ${APP_ROLE:-all}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-coc}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coc}
-      # **留空即开发夹具模式**：不打官方 API，由 backend/tests/fixtures/ 的占位数据应答
+      # **留空即开发夹具模式**：不打官方 API，由 backend/app/coc/fixtures/ 的占位数据应答
       # （数据自带 _source/_todo 标记，不要当真实数据）。所以这里用 `:-` 而不是 `:?`，
       # 让「还没有 Token」也能把整站跑起来看。拿到 Token 后填上即可切到真实上游。
       COC_API_TOKEN: ${COC_API_TOKEN:-}

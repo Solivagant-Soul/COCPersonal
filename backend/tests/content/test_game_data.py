@@ -9,11 +9,11 @@
 """
 
 import json
-from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
 
+from app.coc.devfixtures import FIXTURES_DIR
 from app.content.game_data import (
     fetch_units_data,
     import_upgrade_items,
@@ -21,8 +21,9 @@ from app.content.game_data import (
 )
 from app.db.models import UpgradeItem
 
+#: 迷你数据集住在夹具目录（包内），不再用 cwd 相对路径 —— cwd 相对路径换个目录就断。
 MINI = json.loads(
-    Path("tests/fixtures/coc_units_mini.json").read_text(encoding="utf-8")
+    (FIXTURES_DIR / "coc_units_mini.json").read_text(encoding="utf-8")
 )
 
 

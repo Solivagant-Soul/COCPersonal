@@ -1,4 +1,4 @@
-"""dev 夹具上游：无真实 Token 时用 tests/fixtures 应答。
+"""dev 夹具上游：无真实 Token 时用 app/coc/fixtures 应答。
 
 这是**开发期**能力，不是生产路径：只有 ``COC_API_TOKEN`` 为空或占位值时才启用。
 夹具响应带 ``_source``/``_todo`` 自报身份，避免被误当真数据。

@@ -190,7 +190,7 @@ docker compose exec postgres psql -U coc -d coc -c \
 ## 5.（无 Token 时的）夹具数据与排行榜
 
 `COC_API_TOKEN` 为空时，后端不打官方 API，由 `app/coc/devfixtures.py` 的
-FixtureTransport 用 `backend/tests/fixtures/` 的本地样本应答：**HTTP 契约完全真实，
+FixtureTransport 用 `backend/app/coc/fixtures/` 的本地样本应答：**HTTP 契约完全真实，
 数据是手搓占位**（响应自带 `_source`/`_todo` 键自报身份），玩家详情永远返回同一个
 样本玩家——不是 bug，接 Token 后消失。
 

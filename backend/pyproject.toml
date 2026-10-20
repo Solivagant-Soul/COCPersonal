@@ -39,6 +39,11 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+# 夹具是**运行时资产**（无 Token 时由 app/coc/devfixtures.py 应答），必须随 wheel 分发。
+# 不声明这一段，镜像里 pip install . 装出来的包没有 JSON → 夹具上游在生产里 FileNotFoundError。
+"app.coc" = ["fixtures/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

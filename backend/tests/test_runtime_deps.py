@@ -40,10 +40,15 @@ def _normalize(name: str) -> str:
 
 
 def _declared_distributions() -> set[str]:
-    """``pyproject.toml`` 里显式声明的发行包。"""
+    """``pyproject.toml`` 里显式声明的发行包 **+ 项目自己**。
+
+    项目自己必须算进去：镜像里装的就是它。漏了它，源码树里任何 ``*.egg-info``
+    构建残留都会让 ``packages_distributions()`` 把 ``app`` 映射成一个「未声明的孤儿包」，
+    守卫会连应用自己一起屏蔽掉（这是本守卫写出来后真踩到的一次误报）。
+    """
     data = tomllib.loads((BACKEND_DIR / "pyproject.toml").read_text(encoding="utf-8"))
     deps = data["project"]["dependencies"]
-    out = set()
+    out = {_normalize(data["project"]["name"])}
     for dep in deps:
         match = _REQ_NAME.match(dep)
         assert match, f"解析不了依赖声明：{dep!r}"
@@ -212,3 +217,41 @@ def test_declared_dependencies_cover_runtime_imports() -> None:
         if not any(_normalize(d) in closure for d in dists):
             missing.append(f"{module}（提供方 {sorted(dists)}）")
     assert not missing, "这些模块没被任何已声明依赖覆盖：" + "；".join(missing)
+
+
+#: 夹具文件名 → 必须随包分发的清单
+FIXTURE_FILES = (
+    "clan_detail.json",
+    "player_profile.json",
+    "locations.json",
+    "ranking_clans.json",
+    "coc_units_mini.json",
+)
+
+
+def test_fixtures_are_packaged_with_the_app() -> None:
+    """夹具是**运行时资产**（无 Token 时由夹具上游应答），必须在包内并随 wheel 分发。
+
+    镜像里应用是 ``pip install .`` 装进 site-packages 的，``tests/`` 根本不进镜像 ——
+    夹具放在 ``tests/fixtures/`` 时，**无 Token 的部署里所有上游读取都 FileNotFoundError**
+    （``seed-dev-rankings`` 同样报错）。这条已经真实发生过两次。
+    """
+    import app.coc
+    from app.coc.devfixtures import FIXTURES_DIR
+
+    package_dir = Path(app.coc.__file__).resolve().parent
+    assert FIXTURES_DIR.is_relative_to(package_dir), (
+        f"夹具目录必须在包内（{package_dir} 之下），当前是 {FIXTURES_DIR}"
+    )
+    for name in FIXTURE_FILES:
+        path = FIXTURES_DIR / name
+        assert path.is_file(), f"夹具缺失：{path}"
+
+    # 还得声明成 package-data，否则 wheel 里没有它们（源码树里有 ≠ 装出来有）
+    data = tomllib.loads((BACKEND_DIR / "pyproject.toml").read_text(encoding="utf-8"))
+    package_data = data["tool"]["setuptools"].get("package-data", {})
+    globs = package_data.get("app.coc", [])
+    assert any("fixtures" in g for g in globs), (
+        "pyproject.toml 的 [tool.setuptools.package-data] 必须为 app.coc 声明 "
+        f"fixtures/*.json，当前是 {globs}"
+    )

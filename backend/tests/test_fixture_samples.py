@@ -1,4 +1,4 @@
-"""tests/fixtures 下的真实响应样本。
+"""app/coc/fixtures 下的真实响应样本。
 
 这些文件是 Task 5 的手搓占位（无真实 Token），契约是：
 
@@ -8,14 +8,16 @@
 
 真实 Token 到位后，把四个文件整体替换为真实响应，然后删掉本文件里的
 ``test_*_are_marked_placeholders``（那时它们不再是占位）。
+
+**夹具住在包内**（``app/coc/fixtures/``）不是 ``tests/`` 下：无 Token 时夹具上游
+（``app/coc/devfixtures.py``）在**运行时**要读它们，而生产镜像只装 ``app/`` 包。
 """
 
 import json
-from pathlib import Path
 
 import pytest
 
-FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
+from app.coc.devfixtures import FIXTURES_DIR
 
 SAMPLE_FILES = [
     "clan_detail.json",

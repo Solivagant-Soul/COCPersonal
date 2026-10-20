@@ -1,9 +1,10 @@
-"""开发期种子数据：把 ``tests/fixtures/`` 的样本灌进库。
+"""开发期种子数据：把 ``app/coc/fixtures/`` 的样本灌进库。
 
 没有真实 Supercell Token 时，排行榜接口读的是**数据库**而不是实时上游，
 所以本地联调前先跑一次这个，排行榜页才有东西可显示。
 
-**仅开发期使用**，不进生产流程。真实采集走 ``app/collector/``。
+**仅用于开发与演示**，不进生产数据流程。真实采集走 ``app/collector/``。
+夹具随包分发（``app/coc/fixtures/``），所以这个命令在**部署后的容器里也能跑**。
 """
 
 from __future__ import annotations
@@ -16,11 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collector.jobs._upsert import upsert_all
 from app.collector.rankings_service import RankingKind, replace_rankings
+from app.coc.devfixtures import FIXTURES_DIR
 from app.db.models import Location
 
-#: ``app/devseed.py`` → parents[1] = backend/ 根
-FIXTURES_DIR = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
-
+#: 夹具目录：**与夹具上游共用同一个定义**（``app/coc/devfixtures.py``）。
+#: 自己算路径就是当初的坑：仓库相对路径在生产镜像里不存在 → seed 命令在镜像里
+#: ``FileNotFoundError``。夹具是**运行时资产**（夹具上游要读它），必须随包分发。
 #: 夹具 ranking_clans.json 里的地区（China）。
 DEFAULT_LOCATION_ID = 32000001
 

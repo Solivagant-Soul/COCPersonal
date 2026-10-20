@@ -1,4 +1,4 @@
-"""``seed-dev-rankings``：把 tests/fixtures 的榜单样本灌进库，供前端联调。
+"""``seed-dev-rankings``：把 app/coc/fixtures 的榜单样本灌进库，供前端联调。
 
 没有真实 Token 时，排行榜接口读的是数据库，不是实时上游——所以需要种子数据。
 """

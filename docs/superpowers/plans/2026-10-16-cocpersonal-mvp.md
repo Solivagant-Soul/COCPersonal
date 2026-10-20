@@ -764,3 +764,53 @@ cd frontend; npm run dev                                  # http://localhost:517
 22 分钟基本都耗在这；用 BuildKit cache mount 可显著缩短。`Docker Compose is configured to
 build using Bake, but buildx isn't installed` 是无害告警（compose 内置 bake 兜住了构建）。
 
+## Task 15：夹具没随包分发（2026-10-20）
+
+**触发**：服务器上 `docker compose exec api python -m app.cli seed-dev-rankings` 报
+`FileNotFoundError: .../site-packages/tests/fixtures/locations.json`。
+
+**根因（比报错大得多）**：夹具放在 `backend/tests/fixtures/`（**测试专用目录**），
+但它们是**运行时资产**：
+
+- `app/coc/devfixtures.py` 的 `FixtureTransport`（无 Token 时的上游替身）在**请求时**读夹具；
+- `app/devseed.py`（灌排行种子）在**运行时**读夹具。
+
+两者都用仓库相对路径（`parents[N] / "tests" / "fixtures"`）定位，而生产镜像是
+`pip install .` 装进 site-packages 的 —— **`tests/` 根本不进镜像**，
+镜像里解析出来是 `site-packages/tests/fixtures`（不存在）。
+
+所以：**无 Token 的部署里，所有上游读取接口（玩家/部落/地区）全部 500**，
+不止 seed 命令坏。这条与 Task 14 是同一类缺陷（**本机能跑 ≠ 镜像能跑**），
+只是这次坏在「数据文件」而不是「Python 包」。
+
+**裁定**：
+
+1. **夹具搬进包内**：`backend/tests/fixtures/*.json` → `backend/app/coc/fixtures/`
+   （5 份，含只给测试用的 `coc_units_mini.json`）。理由：夹具是运行时资产，
+   放 `tests/` 下注定进不了镜像。历史规格/计划里写的 `tests/fixtures/` 保持原样
+   （那是当时的记录），**以本次裁定为准**。
+2. **路径唯一定义**：`devfixtures.FIXTURES_DIR = Path(__file__).parent / "fixtures"`；
+   `devseed` 不再自己算路径，直接 `from app.coc.devfixtures import FIXTURES_DIR`。
+3. **`pyproject.toml` 声明 package-data**（`"app.coc" = ["fixtures/*.json"]`）——
+   不声明则 wheel 里没有 JSON，源码树里跑得通、装出来照样 FileNotFoundError。
+4. 测试跟着改：`tests/fixtures/test_samples.py` → `tests/test_fixture_samples.py`；
+   `test_mappers.py` 与 `test_game_data.py` 改用包内路径（后者原来是 cwd 相对路径，
+   换个目录就断）。
+5. 守门测试 `tests/test_runtime_deps.py::test_fixtures_are_packaged_with_the_app`：
+   夹具必须在包目录下 + 文件齐全 + `package-data` 必须声明。
+
+**验证**：504 passed（503 + 1 条新守卫）；构建 wheel 后确认
+`app/coc/fixtures/*.json` **在包内**；再把 wheel `--no-deps --target` 装进临时目录、
+**在没有 `tests/` 的条件下**跑夹具上游 → 玩家 200 `#9QJ8L0`、地区 200 共 4 条、
+部落 200 `#2PP`、`devseed` 读到 3 条榜单（修复前这些全是 FileNotFoundError）。
+
+**顺带修掉守卫自身的误报**：依赖守卫一度把应用自己（`app`）当成「未声明的孤儿包」
+屏蔽了 —— 源码树里任何 `*.egg-info` 构建残留都会让 `packages_distributions()`
+把 `app` 映射到本项目发行包。修正：**项目自身算「镜像的一部分」**，纳入声明集。
+
+**教训（两条同源）**：
+
+- 「本机测试全绿」不等于「镜像能跑」。镜像里只有 `pyproject.toml` 声明过的**包**与
+  **package-data**，仓库里的其他文件（`tests/`、脚本、配置）统统不在。
+- 因此凡是要在**运行时**被读到的文件，都必须**随包分发**，并有测试守着。
+
