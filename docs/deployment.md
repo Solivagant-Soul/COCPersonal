@@ -339,11 +339,14 @@ docker compose exec api python -m app.cli seed-dev-rankings
 | 8 | 前端 | `curl -sI http://127.0.0.1/` | 200, `text/html` |
 | 9 | 缓存 | `meta.cache` MISS→HIT | §7 第 6 行 |
 | 10 | 后台 | SQLAdmin 登录 | §7 第 8 行 |
+| 11 | 镜像依赖 | `docker compose exec api python -c "import itsdangerous"` | 无报错（镜像里只有声明过的依赖，见 §3 提醒） |
+| 12 | `.env` 插值 | `docker compose config 2>&1 \| grep "not set"` | **无输出**——有输出说明某个值里的 `$xxx` 被静默截断了（§2 陷阱） |
 
 ## 10. 常见故障速查
 
 | 症状 | 检查点 |
 | --- | --- |
+| **api 反复重启（`Restarting (1)`）** | 这是 **uvicorn 导入期失败**（exit 1），不是运行期错误：`docker compose logs api --tail 50` 看 traceback。两种常见根因：① 镜像缺依赖（`ModuleNotFoundError`）——依赖声明在 `pyproject.toml`，`backend/tests/test_runtime_deps.py` 守着这条；② 代码版本过旧（`AttributeError: module 'app.main' has no attribute 'app'`）→ `git pull` 后重建 |
 | `up` 直接报 `POSTGRES_PASSWORD 必填` | `.env` 没建、不在仓库根、变量名拼错（compose 的 `${VAR:?}` 在拦你，好事） |
 | api 反复重启，日志 `connection ... postgres refused` | postgres 还没 healthy，等 start_period（40s）过完再看；仍不行查 `POSTGRES_PASSWORD` 是否两边一致 |
 | 页面 502 | `docker compose logs -f api`；`readyz` 手动 curl 试 |
