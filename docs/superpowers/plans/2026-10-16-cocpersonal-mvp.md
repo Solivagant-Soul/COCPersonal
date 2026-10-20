@@ -814,3 +814,31 @@ build using Bake, but buildx isn't installed` 是无害告警（compose 内置 b
   **package-data**，仓库里的其他文件（`tests/`、脚本、配置）统统不在。
 - 因此凡是要在**运行时**被读到的文件，都必须**随包分发**，并有测试守着。
 
+## Task 16：镜像构建提速（2026-10-20）
+
+**问题**：首次真实 `up` 时 api 镜像构建耗时 **22 分钟**，几乎全在 `pip install .` 的下载上
+（服务器到 PyPI 带宽很慢）。之后每次改代码重建都要再等一遍。
+
+**根因**：`backend/Dockerfile` 的 builder 层设了 `PIP_NO_CACHE_DIR=1` —— 它把 pip 的
+下载缓存整个关掉，于是**每次构建都从零下载全部依赖**。
+
+**处置**：
+
+1. 删掉 `PIP_NO_CACHE_DIR=1`（保留 `PIP_DISABLE_PIP_VERSION_CHECK=1`）。
+2. 给装依赖的 `RUN` 挂 BuildKit cache mount：
+   `--mount=type=cache,target=/root/.cache/pip` —— 下载缓存留在 BuildKit 缓存里，
+   **不进镜像层**（不影响产物内容与可复现性）。
+3. 守门测试加进 `backend/tests/test_deployment_config.py`：
+   - `test_dockerfile_does_not_disable_pip_cache`：不许再出现 `PIP_NO_CACHE_DIR=1`
+     （按本文件既有风格，**先滤掉注释行**再匹配 —— 第一版把注释里那句解释也匹配上了，
+     测试当场变红）；
+   - `test_dockerfile_uses_buildkit_cache_mount_for_pip`：cache mount 必须挂上。
+
+**效果**：第一次构建仍要下全量（十几分钟），之后每次重建只花「缓存命中」的时间。
+**代价**：需要 BuildKit（Docker 23+ 默认启用）。服务器上的构建日志显示走的是
+BuildKit（`docker:default` 驱动 + `=>` 进度格式），所以 cache mount 可用；
+若在旧 Docker 上报 `--mount option requires BuildKit`，用 `DOCKER_BUILDKIT=1` 或升级。
+
+**验证**：506 passed（504 + 2 条新断言）；**构建加速效果需在服务器上实测**
+（本机无 Docker，无法给出秒数）。
+

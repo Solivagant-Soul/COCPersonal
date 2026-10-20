@@ -15,8 +15,9 @@
 # --------------------------------------------------------------------------- #
 FROM python:3.12-slim AS builder
 
-ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# **不要设 PIP_NO_CACHE_DIR=1** —— 它会把 pip 的下载缓存整个关掉，
+# 于是每次重建镜像都要重下全部依赖（实测一次 22 分钟，几乎全耗在下载上）。
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /build
 
@@ -24,7 +25,14 @@ WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY app ./app
 
-RUN python -m venv /opt/venv \
+# cache mount：pip 的下载缓存留在 BuildKit 缓存里，**不进镜像层**。
+# 第一次构建仍然要下全量（十几分钟，取决于到 PyPI 的带宽），
+# 之后每次重建只要几十秒 —— 改代码不用再等一遍下载。
+#
+# 需要 BuildKit（Docker 23+ 默认启用）。若报 "--mount option requires BuildKit"，
+# 用 DOCKER_BUILDKIT=1 docker build ... 或升级 Docker。
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
     && /opt/venv/bin/pip install .
 

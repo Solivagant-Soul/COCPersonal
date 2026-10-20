@@ -257,6 +257,40 @@ def test_nginx_upstream_points_at_the_api_service():
 
 
 # --------------------------------------------------------------------------- #
+# 构建速度（部署体验）
+# --------------------------------------------------------------------------- #
+
+
+def test_dockerfile_does_not_disable_pip_cache():
+    """``PIP_NO_CACHE_DIR=1`` 会把 pip 的下载缓存整个关掉。
+
+    后果不是"慢一点"：每次重建镜像都要重下全部依赖 —— 实测一次 **22 分钟**，
+    几乎全耗在下载上，于是改一行代码也要等十几分钟。
+    """
+    dockerfile = _read("Dockerfile")
+    # 只看配置行，不看注释 —— 注释里提到它是在解释"为什么不能这么写"
+    directives = "\n".join(
+        line for line in dockerfile.splitlines() if not line.strip().startswith("#")
+    )
+    assert re.search(r"PIP_NO_CACHE_DIR\s*[=:]\s*1", directives) is None, (
+        "不要设 PIP_NO_CACHE_DIR=1：pip 缓存被关掉后每次重建都重下全量依赖"
+    )
+
+
+def test_dockerfile_uses_buildkit_cache_mount_for_pip():
+    """pip 的下载要用 BuildKit cache mount 缓存住。
+
+    cache mount 的内容**不进镜像层**，只留在 BuildKit 缓存里：第一次构建下全量，
+    之后每次重建只花"缓存命中"的时间（几十秒）。需要 BuildKit（Docker 23+ 默认启用）。
+    """
+    dockerfile = _read("Dockerfile")
+    assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile, (
+        "pip install 必须挂 BuildKit cache mount："
+        "--mount=type=cache,target=/root/.cache/pip"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # 运维脚本
 # --------------------------------------------------------------------------- #
 

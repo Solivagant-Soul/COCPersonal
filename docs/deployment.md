@@ -127,6 +127,13 @@ docker compose up -d --build     # 首次较久：前端要 npm ci + vue-tsc
 docker compose ps
 ```
 
+> **构建耗时**：api 镜像要装全部 Python 依赖，**第一次**构建要下全量
+> （实测十几到二十分钟，取决于到 PyPI 的带宽）。之后每次重建只花几十秒 ——
+> Dockerfile 用了 BuildKit cache mount（`--mount=type=cache,target=/root/.cache/pip`）
+> 缓存 pip 的下载，缓存**不进镜像层**。
+> 需要 BuildKit（Docker 23+ 默认启用）；若报 `--mount option requires BuildKit`，
+> 用 `DOCKER_BUILDKIT=1` 或升级 Docker。
+
 期望状态【首跑核对】：
 
 | 服务 | 期望 |
@@ -352,7 +359,8 @@ docker compose exec api python -m app.cli seed-dev-rankings
 
 | 症状 | 检查点 |
 | --- | --- |
-| **api 反复重启（`Restarting (1)`）** | 这是 **uvicorn 导入期失败**（exit 1），不是运行期错误：`docker compose logs api --tail 50` 看 traceback。两种常见根因：① 镜像缺依赖（`ModuleNotFoundError`）——依赖声明在 `pyproject.toml`，`backend/tests/test_runtime_deps.py` 守着这条；② 代码版本过旧（`AttributeError: module 'app.main' has no attribute 'app'`）→ `git pull` 后重建 |
+| api 反复重启（`Restarting (1)`） | 这是 **uvicorn 导入期失败**（exit 1），不是运行期错误：`docker compose logs api --tail 50` 看 traceback。两种常见根因：① 镜像缺依赖（`ModuleNotFoundError`）——依赖声明在 `pyproject.toml`，`backend/tests/test_runtime_deps.py` 守着这条；② 代码版本过旧（`AttributeError: module 'app.main' has no attribute 'app'`）→ `git pull` 后重建 |
+| 每次重建 api 都要等十几分钟 | pip 缓存没生效：确认 Dockerfile 里**没有** `PIP_NO_CACHE_DIR=1`，且 `RUN` 带 `--mount=type=cache,target=/root/.cache/pip`；另外要 BuildKit（`DOCKER_BUILDKIT=1` 可强制开启） |
 | `up` 直接报 `POSTGRES_PASSWORD 必填` | `.env` 没建、不在仓库根、变量名拼错（compose 的 `${VAR:?}` 在拦你，好事） |
 | api 反复重启，日志 `connection ... postgres refused` | postgres 还没 healthy，等 start_period（40s）过完再看；仍不行查 `POSTGRES_PASSWORD` 是否两边一致 |
 | 页面 502 | `docker compose logs -f api`；`readyz` 手动 curl 试 |
