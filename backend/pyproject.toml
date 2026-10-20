@@ -21,6 +21,13 @@ dependencies = [
     "apscheduler>=3.10",
     "sqladmin",
     "python-multipart",
+    # SQLAdmin 的 AuthenticationBackend 需要 starlette 的 SessionMiddleware，
+    # 后者在函数内 import itsdangerous —— 而 itsdangerous 只挂在 fastapi 的
+    # `extra == "all"` 与 sqladmin 的 `extra == 'auth'` 下，`pip install .`
+    # **不装 extras**，所以镜像里没有它 → 容器在导入期就 ModuleNotFoundError → exit 1。
+    # 本机环境恰好装着它，于是测试全绿、镜像却起不来（本 bug 的原样复现）。
+    # 守门测试：tests/test_runtime_deps.py
+    "itsdangerous>=2.0",
 ]
 
 [project.optional-dependencies]

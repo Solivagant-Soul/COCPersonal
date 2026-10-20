@@ -63,6 +63,14 @@ Start-Process "C:\pgportable\pgsql\bin\postgres.exe" `
   `sqlalchemy/sql/_util_cy.cp312-win_amd64.pyd` 在本机加载失败（`WinError 4551`，
   逐字节比对确认与官方 wheel 完全一致、干净路径下同样被拦，非安装残缺）。
   上限一放开，Task 20 的 Docker `pip install .` 会解析到 2.1.x，产出一个 import 即崩的镜像。
+- **生产镜像里只有 `pyproject.toml` 声明过的依赖，本机环境却多得多。**
+  「本机装着、但不属于任何已声明依赖的孤儿包」会让本机测试全绿、却让容器在**导入期**
+  就 `ModuleNotFoundError` → `uvicorn` 退出码 1 → 容器无限重启。真实踩过：`itsdangerous`
+  只挂在 `fastapi` 的 `extra == "all"` 与 `sqladmin` 的 `extra == 'auth'` 下，
+  而 `pip install .` **不装 extras** —— 它却是 SQLAdmin 认证经 starlette SessionMiddleware
+  的硬需求，漏声明就等于镜像起不来。
+  守门测试：`tests/test_runtime_deps.py`（把孤儿包屏蔽掉再 import 一次应用，复现镜像环境）。
+  **加了新依赖必须进 `dependencies`；靠别人的 extra 顺带装到的东西不算。**
 - **测试环境变量必须在任何 `app.*` 被 import 之前设置。** `get_settings()` 带 `lru_cache`，
   首次调用即固化。`tests/conftest.py` 因此在模块顶层（import 任何 app 模块之前）调
   `set_test_env()`；fixture 里那次调用是冗余兜底。改动它之前先读那段注释。
