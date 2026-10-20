@@ -143,6 +143,23 @@ docker compose up -d          # 改 .env 必须 up -d 重建，restart 不重读
 docker compose ps             # api 应回到 healthy
 ```
 
+**不确定当前生效密码时，用确定式的做法**（别猜「我以为的值」——`.env` 里的字面量
+不等于 compose 插值后的值）：
+
+```bash
+# 1) 读出 compose 实际给容器的值
+PW=$(docker compose exec -T postgres printenv POSTGRES_PASSWORD | tr -d '\r')
+echo "生效密码: [$PW]"
+# 2) 把库里的角色密码对齐成这个值（本地 trust，不需要旧密码）
+docker compose exec -T postgres psql -U coc -d coc -c "ALTER USER coc WITH PASSWORD '$PW';"
+# 3) 清掉连接池里的旧连接
+docker compose restart api
+curl -s http://127.0.0.1/readyz      # {"status":"ready"}
+```
+
+> 步骤 1 的值里若含单引号，步骤 2 的 SQL 要相应转义；含 `$` 的话说明 `.env` 还没改干净
+> （`$xxx` 会被 compose 当变量插值），先按上面「密码里的 `$` 会被 compose 插值」处理。
+
 > 排查时先确认「两边」现在各是什么：`docker compose exec postgres printenv POSTGRES_PASSWORD`
 > 与 `docker compose exec api printenv DATABASE_URL` —— 它们一定一致（同一个 `.env`），
 > 不一致的是**库里的角色密码**（读不出来，只有哈希），所以直接 `ALTER USER` 统一最省事。
