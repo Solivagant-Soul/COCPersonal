@@ -23,18 +23,36 @@ WORKDIR /build
 
 # SQLAlchemy 必须 <2.1（见 AGENTS.md）
 COPY pyproject.toml README.md ./
-COPY app ./app
+
+# **依赖层只依赖清单，不依赖源码。**
+# 把 `COPY app ./app` 放在 pip install 之前的话，改一行代码就会让这一层失效、
+# 整套依赖重装一遍 —— 实测线上每次多花几分钟，而这几分钟与代码改动毫无关系。
+# 依赖列表直接从 pyproject.toml 抽（**唯一来源**），不另维护 requirements.txt：
+# 两份清单必然漂移，而漂移只会在重建镜像时才暴露。
+RUN python - > /tmp/requirements.txt <<'PY'
+import pathlib
+import tomllib
+
+project = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+print("\n".join(project["project"]["dependencies"]))
+PY
 
 # cache mount：pip 的下载缓存留在 BuildKit 缓存里，**不进镜像层**。
 # 第一次构建仍然要下全量（十几分钟，取决于到 PyPI 的带宽），
 # 之后每次重建只要几十秒 —— 改代码不用再等一遍下载。
 #
 # 需要 BuildKit（Docker 23+ 默认启用）。若报 "--mount option requires BuildKit"，
-# 用 DOCKER_BUILDKIT=1 docker build ... 或升级 Docker。
+# 用 DOCKER_BUILDKIT=1 docker build ... 或升级 Docker。上面的 heredoc 同样要求 BuildKit。
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install .
+    && /opt/venv/bin/pip install -r /tmp/requirements.txt
+
+# 应用自身单独装：`--no-deps` 保证不动依赖层，且**只有这一层依赖源码**。
+# 只改代码时上面两层全部命中缓存，重建实测十几秒。
+COPY app ./app
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install --no-deps .
 
 
 # --------------------------------------------------------------------------- #

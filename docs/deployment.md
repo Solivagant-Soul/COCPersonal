@@ -172,8 +172,17 @@ docker compose ps
 ```
 
 > **构建耗时**：api 镜像要装全部 Python 依赖，**第一次**构建要下全量
-> （实测十几到二十分钟，取决于到 PyPI 的带宽）。之后每次重建只花几十秒 ——
-> Dockerfile 用了 BuildKit cache mount（`--mount=type=cache,target=/root/.cache/pip`）
+> （实测十几到二十分钟，取决于到 PyPI 的带宽）。之后：
+>
+> - **只改代码** → 只重建「装应用自身」那一层，依赖层全部命中缓存，实测十几秒；
+> - **改了 `pyproject.toml` 的依赖** → 依赖层失效，回到"装依赖"的时间（下载仍走缓存）。
+>
+> 做法是把依赖安装与源码拷贝拆成两层：依赖清单从 `pyproject.toml` 抽出来单独装
+> （`pip install -r /tmp/requirements.txt`），应用自身用 `pip install --no-deps .`
+> 单独装。**别把 `COPY app` 挪回依赖安装之前** —— 那样改一行代码就会重装全量依赖，
+> 有测试守着这条（`backend/tests/test_deployment_config.py`）。
+>
+> Dockerfile 用 BuildKit cache mount（`--mount=type=cache,target=/root/.cache/pip`）
 > 缓存 pip 的下载，缓存**不进镜像层**。
 > 需要 BuildKit（Docker 23+ 默认启用）；若报 `--mount option requires BuildKit`，
 > 用 `DOCKER_BUILDKIT=1` 或升级 Docker。

@@ -290,6 +290,33 @@ def test_dockerfile_uses_buildkit_cache_mount_for_pip():
     )
 
 
+def test_dockerfile_installs_dependencies_before_copying_source():
+    """依赖安装层不能被源码改动打穿。
+
+    ``COPY app ./app`` 若出现在 ``pip install`` 之前，改一行代码就会让
+    "建 venv + 装全量依赖" 整层失效 —— 每次重建多花几分钟，且与改动无关。
+    判定就是**源码拷贝必须在依赖安装之后**；依赖清单的唯一来源是 pyproject.toml，
+    不允许另加 requirements.txt（两份清单会漂移）。
+    """
+    dockerfile = _read("Dockerfile")
+    assert "pip install -r /tmp/requirements.txt" in dockerfile, (
+        "依赖应从 pyproject.toml 抽出的清单安装（未引入 requirements.txt）"
+    )
+    assert not (ROOT / "requirements.txt").exists(), (
+        "不要引入 requirements.txt：依赖的唯一来源是 pyproject.toml"
+    )
+    # 只看指令行，不看注释 —— 注释里讨论这段顺序时会原样写出这两个字符串
+    directives = "\n".join(
+        line for line in dockerfile.splitlines() if not line.strip().startswith("#")
+    )
+    assert directives.index("COPY app ./app") > directives.index(
+        "pip install -r /tmp/requirements.txt"
+    ), "COPY app 必须排在依赖安装之后，否则改代码会重装全部依赖"
+    assert "pip install --no-deps ." in directives, (
+        "应用自身必须用 --no-deps 安装：依赖已经装好，重装依赖既慢又可能改变版本"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # 运维脚本
 # --------------------------------------------------------------------------- #
