@@ -65,7 +65,7 @@ cd frontend; npm run build           # vue-tsc 类型检查 + 产物到 frontend
 
 ```bash
 cp .env.example .env          # 填 POSTGRES_PASSWORD、ADMIN_USERNAME/PASSWORD/SECRET_KEY、PUBLIC_BASE_URL
-docker compose up -d --build
+./deploy/compose.sh up -d --build
 
 # 首次部署：建表 + 导入升级数据（空库的升级接口只返回空列表）
 docker compose exec api alembic upgrade head
@@ -76,6 +76,24 @@ docker compose exec api python -m app.cli seed-dev-rankings
 ```
 
 然后访问 `http://<服务器IP>/`。
+
+### 对外端口由 `PUBLIC_BASE_URL` 决定
+
+**对外端口是 `PUBLIC_BASE_URL` 的一部分**：写 `http://1.2.3.4:7788` 就对外 7788，
+没写端口就是 `http`→80 / `https`→443。想换端口**只改 `.env` 这一行**。
+
+docker compose 只支持整值 `${VAR}` 插值、没法在 YAML 里从 URL 里抠出端口，
+所以这一步由 `deploy/compose.sh` 完成（读 `.env` → 解析端口 → 转交 compose）：
+
+```bash
+./deploy/compose.sh up -d          # 用它，不要直接 docker compose up -d
+./deploy/compose.sh --print-port   # 只打印推导出的端口（排障用）
+```
+
+直接跑 `docker compose up -d` 不会报错，但会**回落到 80 端口** —— 于是站点跑在 80 上
+而 `PUBLIC_BASE_URL` 指向 7788，浏览器能开页面但投稿图片全裂，且没有任何报错。
+
+改端口后记得**放行防火墙与云安全组**（`7788/tcp`），否则外网打不开。
 
 排障：
 
@@ -98,10 +116,15 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 当前是 **HTTP-only**（无域名、无证书）。要上 HTTPS 不用改任何代码，改配置即可：
 
-1. `docker-compose.yml` 的 `web` 加端口 `- "443:443"`，并加只读挂载 `- ./deploy/certs:/etc/nginx/certs:ro`
+1. `docker-compose.yml` 的 `web` **不用**加端口行 —— `deploy/compose.sh` 看到
+   `PUBLIC_BASE_URL` 是 `https://` 就会自动把**宿主机侧**端口取 443、
+   **容器侧**端口取 443（容器内 nginx 的 TLS server 块）。只要加证书挂载：
+   `- ./deploy/certs:/etc/nginx/certs:ro`
 2. 取消 `deploy/nginx.conf` 末尾那段注释掉的 `443 ssl` server，把它的 location 段按注释补齐
+   （**必须**打开 —— 容器侧没有 443 server 块的话，宿主机连上 443 端口会被拒绝）
 3. 80 端口的 server 里改成 `return 301 https://$host$request_uri;`（保留 ACME 验证目录的 location）
-4. 证书续期仿照 `backend/deploy/certbot-renew.sh` 写一份（**注意**：那个脚本引用的
+4. `.env` 的 `PUBLIC_BASE_URL` 改成 `https://<域名>`，再 `./deploy/compose.sh up -d`
+5. 证书续期仿照 `backend/deploy/certbot-renew.sh` 写一份（**注意**：那个脚本引用的
    `certbot`/`nginx` 服务在本仓库 compose 里不存在，只抄思路）
 
 逐步命令见 `docs/deployment.md` §9。

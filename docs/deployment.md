@@ -31,7 +31,7 @@
 
 | 容器 | 镜像来源 | 对外端口 | 数据落点 |
 | --- | --- | --- | --- |
-| web | `frontend/Dockerfile`（node:24-alpine 构建 → nginx:1.27-alpine） | **80**（可加 443） | 无状态 |
+| web | `frontend/Dockerfile`（node:24-alpine 构建 → nginx:1.27-alpine） | `PUBLIC_BASE_URL` 里写的那个端口（默认 **80**） | 无状态 |
 | api | `backend/Dockerfile`（python:3.12-slim，非 root 运行） | 无（内部 8000） | `media` 卷（读写） |
 | postgres | postgres:16-alpine | 无（内部 5432） | `pgdata` 命名卷 |
 
@@ -52,7 +52,7 @@
 | --- | --- | --- |
 | 服务器 | Linux x86_64，2 核 4G 起 | 资源大头是 postgres 与前端构建 |
 | Docker | 24+，`docker compose version` 可用 | **v2 语法**，别用旧 docker-compose v1 |
-| 防火墙 | 放行 80（启用 HTTPS 后加 443） | api/postgres 无需对外 |
+| 防火墙 | 放行 `PUBLIC_BASE_URL` 里写的那个端口（默认 80；启用 HTTPS 后是 443） | api/postgres 无需对外 |
 | 出网 | `registry-1.docker.io`（拉镜像）、`registry.npmjs.org`（导入升级数据） | 夹具模式下**不需要** Supercell 网络 |
 | 域名（可选） | 已解析 + 备案 | 只在启用 HTTPS（§9）时需要 |
 | Supercell Token（可选） | 不填也能完整跑通整站 | 不填 = 夹具模式（§5） |
@@ -79,7 +79,7 @@ openssl rand -base64 36   # 跑三次：POSTGRES_PASSWORD / ADMIN_PASSWORD / ADM
 | `ADMIN_USERNAME` | 用户名 | 后台 http://IP/admin/ 的登录名 |
 | `ADMIN_PASSWORD` | 强密码 | 凭据只从环境变量读，**不入库、无 create-admin 命令** |
 | `ADMIN_SECRET_KEY` | 随机串 ≥43 字符 | session cookie 签名密钥；泄露 = 任何人可伪造管理员会话 |
-| `PUBLIC_BASE_URL` | `http://<服务器IP>` **必须带协议** | 拼投稿/媒体图片的**绝对 URL** 用。**与 COCBack 文档相反**。上 HTTPS 后改 `https://<域名>` |
+| `PUBLIC_BASE_URL` | `http://<服务器IP>` **必须带协议** | 拼投稿/媒体图片的**绝对 URL** 用。**与 COCBack 文档相反**。上 HTTPS 后改 `https://<域名>`。**同时决定对外端口**（见下方「端口由 PUBLIC_BASE_URL 决定」） |
 
 可选变量（`.env.example` 里的默认值可直接用）：
 
@@ -95,6 +95,51 @@ openssl rand -base64 36   # 跑三次：POSTGRES_PASSWORD / ADMIN_PASSWORD / ADM
 
 ```bash
 git check-ignore .env && echo OK   # 必须有输出：.env 绝不能入库
+```
+
+### 端口由 `PUBLIC_BASE_URL` 决定（改端口的唯一入口）
+
+**对外端口是 `PUBLIC_BASE_URL` 的一部分**：`http://1.2.3.4:7788` → 对外 7788；
+没写端口就是 `http`→80 / `https`→443。想换端口**只改 `.env` 这一行**，别去动
+compose —— 端口与媒体绝对 URL 必须始终一致，改岔了投稿图片全裂。
+
+docker compose **只会做整值 `${VAR}` 插值、没有子串运算**，没法在 YAML 里从 URL 里
+抠出端口，所以这一步由 `deploy/compose.sh` 完成：读 `.env` 的 `PUBLIC_BASE_URL`
+→ 解析端口 → 导出 `WEB_PORT` → 转交 `docker compose`。
+
+**因此：请用脚本启动，不要直接 `docker compose up -d`。**
+
+```bash
+./deploy/compose.sh up -d            # 首次 / 日常启动
+./deploy/compose.sh up -d --build    # 改了代码要重建镜像
+./deploy/compose.sh logs -f web
+./deploy/compose.sh ps
+
+./deploy/compose.sh --print-port     # 只打印推导出的端口，不碰 docker（排障用）
+```
+
+脚本是 `docker compose` 的**薄包装**：其余参数原样透传，行为一致。
+
+> 直接跑 `docker compose up -d` 不会报错，但会**回落到 80 端口**
+> （compose 里写的是 `${WEB_PORT:-80}:80`）。于是站点跑在 80 上，而
+> `PUBLIC_BASE_URL` 写的是 7788 —— 浏览器能打开页面，但投稿图片的绝对 URL
+> 指向 7788，全裂，且没有任何报错。**这就是为什么这层包装值得存在。**
+>
+> 万一你就是想手动调 compose，先导出端口再执行：
+> `export WEB_PORT=$(./deploy/compose.sh --print-port) && docker compose up -d`
+
+**改端口后还要放行防火墙与云安全组**（两道都得做，见 §1 前置条件）：
+
+```bash
+# Ubuntu/Debian
+ufw allow 7788/tcp && ufw status
+# CentOS/RHEL
+firewall-cmd --permanent --add-port=7788/tcp && firewall-cmd --reload
+```
+
+云厂商安全组（阿里云/腾讯云/华为云控制台）也要另加一条入方向规则
+`TCP:7788` —— **这一步漏了的话，服务器上 `curl localhost:7788` 正常，
+外网就是打不开。**
 ```
 
 ### 陷阱：密码里的 `$` 会被 compose 插值
@@ -167,7 +212,7 @@ curl -s http://127.0.0.1/readyz      # {"status":"ready"}
 ## 3. 启动与建表
 
 ```bash
-docker compose up -d --build     # 首次较久：前端要 npm ci + vue-tsc
+./deploy/compose.sh up -d --build   # 首次较久：前端要 npm ci + vue-tsc
 docker compose ps
 ```
 
@@ -284,7 +329,7 @@ docker compose exec api python -m app.cli seed-dev-rankings
 4. 生效方式（改了 `.env` 必须重建容器）：
 
    ```bash
-   docker compose up -d
+   ./deploy/compose.sh up -d
    ```
 
 5. 验证切换成功（**必须用真实存在的 tag**，夹具里的 `#9QJ8L0` 在官方上不存在）：
@@ -349,9 +394,12 @@ docker compose exec api python -m app.cli seed-dev-rankings
 
 | 命令 | 新 `.env` 生效吗 | 说明 |
 | --- | --- | --- |
-| `docker compose up -d` | ✅ | compose 比对解析后的配置，**变了就重建**该容器 |
+| `./deploy/compose.sh up -d` | ✅ | compose 比对解析后的配置，**变了就重建**该容器 |
 | `docker compose restart` | ❌ | 只重启进程，**沿用容器创建时的环境变量** |
-| `docker compose down && docker compose up -d` | ✅ | 等价但更慢（`down` 不删卷，除非加 `-v`） |
+| `./deploy/compose.sh down && ./deploy/compose.sh up -d` | ✅ | 等价但更慢（`down` 不删卷，除非加 `-v`） |
+
+> `docker compose` 不带脚本时也生效，只是**端口会回落到 80**（见 §2「端口由
+> `PUBLIC_BASE_URL` 决定」）。所以**一律用脚本**。
 
 **只有受影响的服务会被重建**：只改 `COC_API_TOKEN` → 只重建 api；改 `POSTGRES_PASSWORD`
 → postgres 与 api 都要重建（`DATABASE_URL` 是 compose 拼出来的，跟着变）。
@@ -370,10 +418,10 @@ docker compose exec api printenv COC_API_TOKEN  # 看容器里真实拿到的值
 
 | 改了什么 | 要做什么 |
 | --- | --- |
-| `.env` 里的变量 | `docker compose up -d`（重建容器） |
+| `.env` 里的变量 | `./deploy/compose.sh up -d`（重建容器） |
 | `deploy/nginx.conf` | `docker compose exec web nginx -s reload`（bind mount，改完即生效，**不用重建**） |
-| 后端代码 | `docker compose build api && docker compose up -d` |
-| 前端代码 | `docker compose build web && docker compose up -d` |
+| 后端代码 | `docker compose build api && ./deploy/compose.sh up -d` |
+| 前端代码 | `docker compose build web && ./deploy/compose.sh up -d` |
 | 数据库结构 | `docker compose exec api alembic upgrade head` |
 
 ### 日志与状态
@@ -439,7 +487,7 @@ gunzip -c /opt/cocpersonal/COCPersonal/backups/db-2026-10-21.sql.gz | \
 ```bash
 cd /opt/cocpersonal/COCPersonal
 git pull
-docker compose up -d --build          # 只改 .env/nginx.conf 时不必 --build
+./deploy/compose.sh up -d --build     # 只改 .env/nginx.conf 时不必 --build
 docker compose exec api alembic upgrade head
 ```
 
@@ -480,18 +528,23 @@ docker compose exec api alembic upgrade head
 
 默认单端口 80（`deploy/nginx.conf` 末尾有 HTTPS 注释块）。需要域名（§1 可选项）：
 
-1. **compose**（`docker-compose.yml` 的 web 服务加一个端口映射与两个挂载）：
+1. **compose**（`docker-compose.yml` 的 web 服务加两个挂载）：
 
    ```yaml
-   ports:
-     - "80:80"
-     - "443:443"                                  # 新增
    volumes:
      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
      - media:/data/media:ro
      - ./deploy/certs:/etc/nginx/certs:ro          # 新增：证书
      - ./deploy/certbot-www:/var/www/certbot       # 新增：ACME 验证目录
    ```
+
+   > **不用加端口行**：`deploy/compose.sh` 看到 `PUBLIC_BASE_URL` 是 `https://`
+   > 就自动把**宿主机侧**端口取 443、**容器侧**端口取 443（容器内 nginx 的 TLS
+   > server 块）。两侧必须一致 —— 把 https 流量转到容器的 80 端口，nginx 会用
+   > **明文**应答，浏览器直接报 TLS 握手失败，而容器日志里看不出任何异常。
+   >
+   > 想用非标准端口（如 `https://coc.example.com:8443`）就写进 `PUBLIC_BASE_URL`，
+   > 脚本会据此推导：宿主机 8443 → 容器 443。
 
 2. **nginx.conf**：80 端口 server 里加一段（放最前，否则会被 301 拦掉）：
 
@@ -516,12 +569,15 @@ docker compose exec api alembic upgrade head
 4. **生效**（nginx.conf 是 bind mount，reload 即可；首次开 443 端口要 `up -d`）：
 
    ```bash
-   docker compose up -d
+   ./deploy/compose.sh up -d
    docker compose exec web nginx -s reload
    ```
 
-   `PUBLIC_BASE_URL` 改成 `https://coc.example.com` 后再 `docker compose up -d`（改的是
-   `.env`，必须重建容器，不能只 reload）。
+   `PUBLIC_BASE_URL` 改成 `https://coc.example.com` 后再 `./deploy/compose.sh up -d`
+   （改的是 `.env`，必须重建容器，不能只 reload）。注意这一步会把对外端口切到
+   **443**（`https` 的默认端口）—— 若你想保留 80/7788 之类的自定义端口，
+   `PUBLIC_BASE_URL` 里要显式写出来：`https://coc.example.com:443` 或
+   `https://coc.example.com:7788`。
 5. **自动续期**：遗留的 `backend/deploy/certbot-renew.sh` 引用 compose 里不存在的
    `certbot`/`nginx` 服务，**只能当思路参考**。本仓库等价做法（宿主机 crontab）：
 
@@ -565,6 +621,7 @@ docker compose exec api alembic upgrade head
 | 10 | 后台 | SQLAdmin 登录 | §8 第 8 行 |
 | 11 | 镜像依赖 | `docker compose exec api python -c "import itsdangerous"` | 无报错（镜像里只有声明过的依赖，见 §3 提醒） |
 | 12 | `.env` 插值 | `docker compose config 2>&1 \| grep "not set"` | **无输出**——有输出说明某个值里的 `$xxx` 被静默截断了（§2 陷阱） |
+| 13 | **端口一致** | `./deploy/compose.sh --print-port` 与 `docker compose ps` 里 web 的映射 | 两边端口相同（见 §2「端口由 PUBLIC_BASE_URL 决定」） |
 
 ## 11. 常见故障速查
 
@@ -579,6 +636,10 @@ docker compose exec api alembic upgrade head
 | 刷新详情页变 404 | SPA fallback：`location /` 里的 `try_files ... /index.html`；检查是否改坏了 `deploy/nginx.conf` |
 | 后台登录失败 | `.env` 的 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 大小写、多余引号；改后**必须** `docker compose up -d`（凭据只进环境变量） |
 | 头像/媒体图片裂 | `PUBLIC_BASE_URL` 协议或地址不对（拼的是绝对 URL） |
+| **浏览器能开页面，但投稿图片全裂** | 端口两边不一致：多半是直接跑了 `docker compose up -d`（回落到 80）而 `PUBLIC_BASE_URL` 写的是别的端口。查 `./deploy/compose.sh --print-port` 与 `docker compose ps` 里 web 的映射，两边应一致 |
+| **改了 `.env` 的端口，站点还在老端口上** | `docker compose restart` **不重读**环境变量，必须 `./deploy/compose.sh up -d`（重建容器才会换端口绑定） |
+| **外网打不开、服务器上 `curl localhost:端口` 正常** | 防火墙/云安全组没放行那个端口。两道都要查：系统防火墙（`ufw`/`firewall-cmd`）与云厂商控制台的安全组入方向规则 |
+| https 站点报 TLS 握手失败 | 容器内没有 443 server 块（或 `deploy/nginx.conf` 里 443 段还注释着）——把 https 流量转到容器的 80 端口，nginx 会用明文应答。见 §9 |
 | **api `unhealthy` + 日志 `password authentication failed for user "coc"`** | `.env` 的密码改了，但**库里的角色密码在数据卷初始化时就冻结了** → 必须 `ALTER USER` 同步（见 §2 陷阱） |
 | 大量 429 | 真实客户端超 60 次/分；`X-Forwarded-For` 已透传，问题多半在共享出口 IP；临时下调 `RATE_LIMIT_PER_MINUTE` 需重启 api |
 | 排行榜空 | 夹具模式没跑 §5；真实模式 `meta/freshness` 看采集时间和 `collectorRuns` |

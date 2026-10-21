@@ -1,0 +1,14 @@
+# shell 脚本必须用 LF。
+#
+# 本机 core.autocrlf=true，Windows 上 checkout 会把 .sh 转成 CRLF；而 Linux 服务器上
+# `set -euo pipefail` 遇到 CRLF 会报 `pipefail: command not found`、shebang 也失效。
+# 这条规则让 .sh 在**所有**平台都以 LF 落盘。
+*.sh text eol=lf
+
+# 部署配置与 compose：按 LF 存，避免 YAML 里的行尾符影响解析
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+
+# 夹具是 JSON，必须纯文本且 LF（json.load 不在乎行尾，但 diff 会脏）
+*.json text eol=lf

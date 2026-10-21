@@ -80,7 +80,15 @@ services:
       api:
         condition: service_started
     ports:
-      - "80:80"
+      # **两侧端口都由 deploy/compose.sh 从 PUBLIC_BASE_URL 推导**（见该脚本文件头）：
+      # 端口是 URL 的一部分，compose 只支持整值 ${VAR} 插值、没法在 YAML 里解析 URL，
+      # 所以由脚本读 .env 的 PUBLIC_BASE_URL → 算出端口 → 导出 WEB_PORT / WEB_CONTAINER_PORT
+      # 再调 compose。直接用 `docker compose`（不经脚本）时回落到 80:80 —— 老行为不变。
+      #
+      # 左侧 = 宿主机侧（对外）；右侧 = 容器内 nginx 的监听端口。
+      # 右侧跟着协议走：http→80（明文 server）、https→443（TLS server）。
+      # 两侧不一致 = 浏览器 TLS 握手失败，且容器日志里看不出任何异常。
+      - "${WEB_PORT:-80}:${WEB_CONTAINER_PORT:-80}"
     volumes:
       # 本文件不含 ${...} 占位符，所以直接挂成生效配置即可（无需 templates 机制）。
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro

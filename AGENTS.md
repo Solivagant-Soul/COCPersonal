@@ -42,6 +42,10 @@ npm run dev       # :5173，/api 已反代到 :8000
   前端所有 URL 与查询参数名只允许出现在 `frontend/src/api/endpoints.ts` 一处，页面不拼字符串。
 - `deploy/nginx.conf` 是**部署侧**配置；本地开发走 Vite 的 `server.proxy`，两者互不影响
   （改了一处记得看另一处是否需要同步）。
+- **部署一律用 `./deploy/compose.sh`（不是 `docker compose`）**：对外端口由
+  `.env` 的 `PUBLIC_BASE_URL` 推导（compose 只能整值插值、没法在 YAML 里解析 URL）。
+  直接跑 `docker compose up -d` 会**回落到 80 端口**，站点能开但投稿图片全裂、
+  且无任何报错。详见 `docs/deployment.md` §2。
 - `.env` 均**不在版本库**（根 `.env` 与 `backend/.env` 都已被忽略）。密钥绝不入库，
   `.env.example` 只放空值占位。
 
