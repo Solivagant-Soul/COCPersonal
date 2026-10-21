@@ -15,6 +15,9 @@
 赛季清单**由旧到新**分页返回（2015-07 起，默认一页 10 条），所以当前赛季要翻到
 最后一页，不能取第一条。赛季 id 有两种格式：旧的 ``2015-07``，以及 2026-09 起的
 ``v2-2026-09-28T05:00:00Z``（23 字符，DB 列宽因此是 64，见迁移 0010）。
+
+**只保留最近 6 个赛季**（``_RECENT_SEASON_COUNT``）：清单仍要翻到底才知道最新的是
+哪几个，但把 136 个历史赛季全写进库没有意义 —— 页面只展示最近几个。
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import datetime as dt
 import logging
 import re
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.coc import endpoints as coc
@@ -51,6 +55,12 @@ _MAX_SEASON_PAGES = 40
 #: 仓库文档此前写的 1–50 只适用于赛季清单，不适用于赛季榜）。取 200 —— 够看，
 #: 又不必一次拉满两万条。
 _SEASON_PLAYER_LIMIT = 200
+
+#: 库里只留最近这么多个赛季。
+#: 官方清单由旧到新、一页 50 条，翻到底才知道最新的是哪几个（136 个约 3 次请求，
+#: 省不掉）；但没必要把 2015 年以来的 136 个赛季全存下来 —— 页面只显示最近几个，
+#: 旧赛季除了占写入量没有用处。窗口外的旧行会被删掉，保证表里就是"最近 6 个"。
+_RECENT_SEASON_COUNT = 6
 
 
 def _season_sort_key(season_id: str) -> str:
@@ -121,7 +131,13 @@ async def collect_seasons(
         return _result(0, 0, failures)
 
     rows: list[Season] = []
-    for item in season_items:
+    # 官方由旧到新，按时间排完取最后 6 个 = 最近 6 个赛季。
+    # 用 ``_season_sort_key`` 而不是裸字符串：两种 id 格式混排时会比错。
+    recent_items = sorted(
+        (item for item in season_items if item.get("id")),
+        key=lambda item: _season_sort_key(str(item["id"])),
+    )[-_RECENT_SEASON_COUNT:]
+    for item in recent_items:
         season_id = item.get("id")
         if not season_id:
             continue
@@ -135,6 +151,16 @@ async def collect_seasons(
             )
         )
     seasons_written = await upsert_all(session, Season, rows, ["league_id", "id"])
+    keep_ids = [row.id for row in rows]
+    if keep_ids:
+        # 窗口外的旧赛季要删：否则以前全量写入留下的行会一直挂在
+        # ``/api/v1/seasons`` 里，"最近 6 个"就成了假话。
+        # 赛季表没有任何外键指向它（rankings.season_id 是裸字符串），删了不会级联。
+        await session.execute(
+            delete(Season).where(
+                Season.league_id == LEGEND_LEAGUE_ID, Season.id.notin_(keep_ids)
+            )
+        )
     await session.commit()
 
     players_ok = 0

@@ -317,6 +317,41 @@ async def test_season_sort_key_handles_both_id_formats():
     assert max(ids) == "v2-2026-09-28T05:00:00Z"
 
 
+async def test_collect_seasons_keeps_only_recent_six(session, settings):
+    """只保留最近 6 个赛季，窗口外的旧行要删掉。
+
+    官方清单有 136 个（翻页才知道最新的是哪几个），但库里只该有 6 行 ——
+    包括以前全量写入留下的历史行，否则 ``/api/v1/seasons`` 会继续吐 2015 年。
+    """
+    session.add(Season(league_id=29000022, id="2014-01", name="全量时代残留"))
+    await session.commit()
+
+    ids = [
+        "2020-01", "2020-02", "2020-03",
+        "2021-01", "2021-02", "2021-03",
+        "2022-01", "2022-02",
+    ]
+    client = FakeClient(
+        routes={
+            "/leagues/29000022/seasons/2022-02": {
+                "items": [{"tag": "#P9", "name": "P9", "rank": 1}]
+            },
+            "/leagues/29000022/seasons": {
+                "items": [{"id": season_id} for season_id in ids],
+                "paging": {"cursors": {}},
+            },
+        }
+    )
+    await run_job("seasons", settings, session, client=client)
+
+    rows = (await session.execute(select(Season).order_by(Season.id))).scalars().all()
+    assert [row.id for row in rows] == ids[-6:]
+    assert "2014-01" not in {row.id for row in rows}
+    # 仍然只给最新赛季抓榜
+    player_calls = [c for c in client.calls if "/seasons/2022-02" in c[1]]
+    assert len(player_calls) == 1
+
+
 async def test_collect_seasons_records_failure_when_upstream_rejects_league_id(
     session, settings
 ):

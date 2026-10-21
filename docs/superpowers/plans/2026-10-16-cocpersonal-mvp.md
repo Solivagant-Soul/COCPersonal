@@ -953,7 +953,11 @@ BuildKit（`docker:default` 驱动 + `=>` 进度格式），所以 cache mount �
   发版必须 `docker compose exec api alembic upgrade head`；
 - `replace_rankings` 加事务级顾问锁（`pg_advisory_xact_lock(0x52414E4B)`）+ 按 scope
   提交；`jobs/rankings.py` 只 select `Location.id`（裸 int），避免 rollback 让 ORM
-  实例过期后 `location.id` 触发同步懒加载 → `MissingGreenlet` 把整轮采集带崩。
+  实例过期后 `location.id` 触发同步懒加载 → `MissingGreenlet` 把整轮采集带崩；
+- 赛季表**只保留最近 6 个赛季**（`_RECENT_SEASON_COUNT`）：清单仍要翻到底才知道最新
+  的是哪几个（136 条约 3 次请求，省不掉），但把 2015 年以来的历史全写进库没有意义 ——
+  页面只展示最近几个。窗口外的旧行在同一事务里删掉，保证 `/api/v1/seasons` 返回的
+  就是"最近 6 个"，而不是"最近 6 个 + 以前全量写入的残留"。
 
 **教训**：`backend/docs/API接口说明.md` 是手写的参考，`limit` 范围和 id 空间都写错过。
 凡涉及「参数取值范围 / id 属于哪套空间」，一律先探针、再写回文档 —— 手写文档不是权威。
