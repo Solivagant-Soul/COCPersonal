@@ -203,13 +203,18 @@ async def test_list_seasons(client, session):
         Season(league_id=WAR_LEAGUE, id="2026-09", name="Sep",
                 start_time=dt.datetime.now(UTC)),
         Season(league_id=WAR_LEAGUE, id="2026-08", name="Aug"),
+        # 新格式与旧格式混排：按字符串倒序会把 ``v2-`` 顶到最前（字母 > 数字），
+        # 必须归一成日期再排 —— 见 ``app.coc.season_ids``。
+        Season(league_id=WAR_LEAGUE, id="v2-2026-06-01T05:00:00Z", name="Jun"),
         Season(league_id=19000000, id="2026-09", name="别联赛的同号赛季"),
     ])
     await session.commit()
 
     body = (await client.get(f"/api/v1/seasons/{WAR_LEAGUE}")).json()
     ids = [i["id"] for i in body["data"]["items"]]
-    assert ids == ["2026-09", "2026-08"], "同号赛季在别的联赛下不应出现"
+    assert ids == ["2026-09", "2026-08", "v2-2026-06-01T05:00:00Z"], (
+        "同号赛季在别的联赛下不应出现；两种 id 格式混排要按日期倒序"
+    )
 
 
 # --------------------------------------------------------------------------- #

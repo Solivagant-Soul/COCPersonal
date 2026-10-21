@@ -307,12 +307,11 @@ async def test_season_sort_key_handles_both_id_formats():
     裸字符串比会把 ``v2-...`` 永远排在最前（字母 > 数字），换回旧格式的下个赛季
     就会被判成"不是最新" —— 于是赛季榜一直停在 v2 那个。
     """
-    from app.collector.jobs.seasons import _season_sort_key
-
-    assert _season_sort_key("2024-01") == "2024-01"
-    assert _season_sort_key("v2-2026-09-28T05:00:00Z").startswith("2026-09-28")
+    from app.coc.season_ids import season_sort_key
+    assert season_sort_key("2024-01") == "2024-01"
+    assert season_sort_key("v2-2026-09-28T05:00:00Z").startswith("2026-09-28")
     ids = ["2015-07", "2026-10", "v2-2026-09-28T05:00:00Z"]
-    assert max(ids, key=_season_sort_key) == "2026-10"
+    assert max(ids, key=season_sort_key) == "2026-10"
     # 反例：裸字符串会选错
     assert max(ids) == "v2-2026-09-28T05:00:00Z"
 

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 
 from app.api.schemas import DEFAULT_PAGE_SIZE, DataOut, MetaOut
+from app.coc.season_ids import season_sort_key
 from app.collector.rankings_service import RankingKind
 from app.db.models import CollectorRun, League, Location, Ranking, Season
 
@@ -259,13 +260,16 @@ async def list_seasons(league_id: int):
     try:
         rows = (
             await session.execute(
-                select(Season)
-                .where(Season.league_id == league_id)
-                .order_by(Season.id.desc())
+                select(Season).where(Season.league_id == league_id)
             )
         ).scalars().all()
     finally:
         await session.close()
+
+    # 倒序在 Python 里做，不写成 ``ORDER BY id DESC``：赛季 id 有 ``2026-10`` 与
+    # ``v2-2026-09-28T05:00:00Z`` 两种格式，SQL 按字符串排会把 ``v2-`` 永远顶到最前
+    # （字母 > 数字），换成旧格式的下一季就排到了末尾。见 ``app.coc.season_ids``。
+    rows.sort(key=lambda row: season_sort_key(row.id), reverse=True)
 
     return DataOut(
         data={

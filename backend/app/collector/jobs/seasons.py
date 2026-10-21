@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import re
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.coc import endpoints as coc
 from app.coc.client import CocClient
+from app.coc.season_ids import season_sort_key
 from app.collector.jobs._upsert import upsert_all
 from app.collector.rankings_service import RankingKind, replace_rankings
 from app.db.models import Season
@@ -61,17 +61,6 @@ _SEASON_PLAYER_LIMIT = 200
 #: 省不掉）；但没必要把 2015 年以来的 136 个赛季全存下来 —— 页面只显示最近几个，
 #: 旧赛季除了占写入量没有用处。窗口外的旧行会被删掉，保证表里就是"最近 6 个"。
 _RECENT_SEASON_COUNT = 6
-
-
-def _season_sort_key(season_id: str) -> str:
-    """把赛季 id 归一成可比较的 ISO 日期前缀。
-
-    id 有两种格式：旧的 ``2015-07``，以及 2026-09 起的 ``v2-2026-09-28T05:00:00Z``。
-    直接按字符串比会在格式切换时选错（``v2-...`` 以字母开头，永远大于任何
-    ``2026-xx``），所以先抠出里面的日期再比。
-    """
-    match = re.search(r"\d{4}-\d{2}(?:-\d{2}T[\d:]+)?Z?", season_id)
-    return match.group(0) if match else season_id
 
 
 def _parse_time(value) -> dt.datetime | None:
@@ -132,10 +121,10 @@ async def collect_seasons(
 
     rows: list[Season] = []
     # 官方由旧到新，按时间排完取最后 6 个 = 最近 6 个赛季。
-    # 用 ``_season_sort_key`` 而不是裸字符串：两种 id 格式混排时会比错。
+    # 用 ``season_sort_key`` 而不是裸字符串：两种 id 格式混排时会比错。
     recent_items = sorted(
         (item for item in season_items if item.get("id")),
-        key=lambda item: _season_sort_key(str(item["id"])),
+        key=lambda item: season_sort_key(str(item["id"])),
     )[-_RECENT_SEASON_COUNT:]
     for item in recent_items:
         season_id = item.get("id")
@@ -165,9 +154,9 @@ async def collect_seasons(
 
     players_ok = 0
     # 当前赛季 = 日期最大的那个（id 形如 ``2024-01`` 或 ``v2-2026-09-28T05:00:00Z``）。
-    # **不要依赖接口顺序**，也不要比裸字符串 —— 见 ``_season_sort_key``。
+    # **不要依赖接口顺序**，也不要比裸字符串 —— 见 ``season_sort_key``。
     if rows:
-        season_id = max(rows, key=lambda row: _season_sort_key(row.id)).id
+        season_id = max(rows, key=lambda row: season_sort_key(row.id)).id
         try:
             rankings = await coc.get_league_season_players(
                 client, LEGEND_LEAGUE_ID, season_id, limit=_SEASON_PLAYER_LIMIT
