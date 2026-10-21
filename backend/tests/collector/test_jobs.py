@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from app.collector import service
 from app.collector.rankings_service import RankingKind
 from app.collector.service import run_job
-from app.coc.errors import CocUpstreamError
+from app.coc.errors import CocBusinessError, CocUpstreamError
 from app.db.models import CollectorRun, League, Location, Ranking, Season
 
 
@@ -227,15 +227,17 @@ async def test_collect_leagues_upserts_all_three_kinds(session, settings):
 
 
 async def test_collect_seasons_writes_season_rows_and_current_season_rankings(session, settings):
+    # 联赛 id 必须是**联赛 tier** 的 Legend League（105000036）。拿 warleague 的
+    # 48000000 来查，上游一律 400 "Unknown value for parameter leagueId"
+    # —— 2026-10-21 线上 23 个 warleague 逐个 400 过。
     client = FakeClient(
         routes={
-            "/warleagues": {"items": [{"id": 48000000, "name": "Crystal League I"}]},
-            # 赛季名次（items）与赛季清单（seasons）路径只差一段，必须按完整路径配
-            "/leagues/48000000/seasons/2026-09": {
+            # 赛季名次（items）与赛季清单（items）路径只差一段，必须按完整路径配
+            "/leagues/105000036/seasons/2026-09": {
                 "items": [{"tag": "#P1", "name": "P1", "rank": 1}]
             },
-            "/leagues/48000000/seasons": {
-                "seasons": [
+            "/leagues/105000036/seasons": {
+                "items": [
                     {"id": "2026-09", "name": "Sep 2026",
                      "startTime": "2026-09-01T08:00:00.000Z"}
                 ]
@@ -246,7 +248,7 @@ async def test_collect_seasons_writes_season_rows_and_current_season_rankings(se
 
     seasons = (await session.execute(select(Season))).scalars().all()
     assert len(seasons) == 1
-    assert seasons[0].league_id == 48000000
+    assert seasons[0].league_id == 105000036
     assert seasons[0].id == "2026-09"
     assert seasons[0].start_time is not None and seasons[0].start_time.tzinfo is not None
 
@@ -257,8 +259,14 @@ async def test_collect_seasons_writes_season_rows_and_current_season_rankings(se
     ).scalars().all()
     assert len(ranks) == 1
     assert ranks[0].tag == "#P1"
-    assert ranks[0].league_id == 48000000
+    assert ranks[0].league_id == 105000036
     assert ranks[0].season_id == "2026-09"
+
+    # warleague 的 id 绝不能出现在赛季接口里（上线后 400 的直接原因）
+    assert all("/warleagues" not in path for _, path, _ in client.calls)
+    # 官方默认只回 10 条，采集必须显式要满一页
+    player_calls = [c for c in client.calls if c[1].endswith("/seasons/2026-09")]
+    assert player_calls and player_calls[0][2] == {"limit": 50}
 
 
 async def test_collect_seasons_does_not_fetch_rankings_for_historical_seasons(session, settings):
@@ -268,10 +276,9 @@ async def test_collect_seasons_does_not_fetch_rankings_for_historical_seasons(se
     """
     client = FakeClient(
         routes={
-            "/warleagues": {"items": [{"id": 48000000, "name": "L"}]},
-            "/leagues/48000000/seasons/2026-09": {"items": []},
-            "/leagues/48000000/seasons": {
-                "seasons": [
+            "/leagues/105000036/seasons/2026-09": {"items": []},
+            "/leagues/105000036/seasons": {
+                "items": [
                     {"id": "2026-09", "name": "Sep", "startTime": "2026-09-01T00:00:00Z"},
                     {"id": "2026-08", "name": "Aug", "startTime": "2026-08-01T00:00:00Z"},
                     {"id": "2026-07", "name": "Jul", "startTime": "2026-07-01T00:00:00Z"},
@@ -285,6 +292,37 @@ async def test_collect_seasons_does_not_fetch_rankings_for_historical_seasons(se
     # 名次只抓当前赛季（列表第一条），历史赛季绝不碰
     player_calls = [c for c in client.calls if c[1].count("/") == 4 and "seasons" in c[1]]
     assert len(player_calls) == 1, f"只应对当前赛季抓一次排名，实际：{player_calls}"
+
+
+async def test_collect_seasons_records_failure_when_upstream_rejects_league_id(
+    session, settings
+):
+    """上游 400 必须记成 failed，不能又是 ``success (ok=0 failed=0)``。
+
+    2026-10-21 线上就是全 23 个 warleague 逐个 400，job 却报 success —— 因为
+    当时 ``items_failed`` 只统计了赛季名次的失败，赛季清单本身的失败没记账。
+    """
+    client = FakeClient(
+        routes={
+            "/leagues/105000036/seasons": CocBusinessError(
+                "Unknown value for parameter leagueId"
+            )
+        }
+    )
+    status = await run_job("seasons", settings, session, client=client)
+
+    assert status == "failed"
+    run = (
+        await session.execute(select(CollectorRun).order_by(CollectorRun.id.desc()))
+    ).scalars().first()
+    assert run.status == "failed"
+    assert run.items_ok == 0
+    assert run.items_failed == 1
+    assert run.error and "leagueId" in str(run.error)
+    # 失败明细要指名是哪个 scope，别只剩一个数字
+    assert any(
+        "leagues/105000036/seasons" in str(d) for d in run.error.get("detail") or []
+    )
 
 
 # --------------------------------------------------------------------------- #

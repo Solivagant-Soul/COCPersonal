@@ -159,9 +159,15 @@ async def get_capitalleague_seasons(
 
 
 async def get_league_season_players(
-    client: CocClient, league_id: int, season_id: str
+    client: CocClient, league_id: int, season_id: str, limit: int | None = None
 ) -> dict[str, Any]:
-    return await client.get(f"/leagues/{league_id}/seasons/{season_id}")
+    """赛季玩家排名。
+
+    **官方默认只返回 10 条**（``limit`` 上限 50），不显式传的话赛季榜会静默
+    变成"只有前 10 名"。
+    """
+    params = {"limit": limit} if limit is not None else None
+    return await client.get(f"/leagues/{league_id}/seasons/{season_id}", params)
 
 
 async def get_clan_labels(client: CocClient) -> dict[str, Any]:

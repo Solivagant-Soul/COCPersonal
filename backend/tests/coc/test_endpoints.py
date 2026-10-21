@@ -379,3 +379,21 @@ async def test_get_league_season_players_path():
         assert calls[0] == "/v1/leagues/29000000/seasons/2024-01"
     finally:
         await client.aclose()
+
+
+async def test_get_league_season_players_passes_limit():
+    """官方默认只回 10 条，采集必须显式带 limit，否则赛季榜静默只剩前 10 名。"""
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"items": []})
+
+    client = make_client(handler)
+    try:
+        from app.coc.endpoints import get_league_season_players
+
+        await get_league_season_players(client, 105000036, "2026-09", limit=50)
+        assert calls[0] == "/v1/leagues/105000036/seasons/2026-09?limit=50"
+    finally:
+        await client.aclose()
