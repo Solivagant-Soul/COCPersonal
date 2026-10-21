@@ -2,7 +2,7 @@
   <div class="tag-input">
     <el-input
       v-model="raw"
-      placeholder="输入玩家标签，如 #8QU8J9J 或 8qu8j9j"
+      :placeholder="placeholder"
       clearable
       @keyup.enter="submit"
     >
@@ -18,6 +18,11 @@
 import { ref } from 'vue'
 
 import { normalizeTag } from '../utils/format'
+
+const props = withDefaults(
+  defineProps<{ placeholder?: string }>(),
+  { placeholder: '输入玩家标签，如 #8QU8J9J 或 8qu8j9j' },
+)
 
 const emit = defineEmits<{ submit: [tag: string] }>()
 
