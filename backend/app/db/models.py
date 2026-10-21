@@ -85,18 +85,21 @@ class Label(Base):
 
 
 class Season(Base):
-    """赛季。主键为复合 ``(league_id, id)``；``id`` 形如 ``'2024-01'``。
+    """赛季。主键为复合 ``(league_id, id)``。
 
     同一赛季号在不同联赛下是两条记录，因此不能只用 ``id`` 作主键。
 
+    ``id`` 有两种格式：旧的 ``'2024-01'``，以及 2026-09 起的新格式
+    ``'v2-2026-09-28T05:00:00Z'``（23 字符）—— 所以列宽是 64，别再压回 10。
+
     ``name`` / 时间列是 Task 12 补的：采集时官方会返回它们，丢掉就得再发一次
-    请求才能显示。
+    请求才能显示。实测赛季元素只有 ``id``，这两个字段目前恒为 NULL。
     """
 
     __tablename__ = "seasons"
 
     league_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str | None] = mapped_column(String(100))
     start_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     end_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
@@ -418,7 +421,8 @@ class Ranking(Base):
     location_id: Mapped[int | None] = mapped_column(Integer, index=True)
     # season_players 时非空
     league_id: Mapped[int | None] = mapped_column(Integer, index=True)
-    season_id: Mapped[str | None] = mapped_column(String(16), index=True)
+    # 赛季 id 有两种格式（``2024-01`` / ``v2-2026-09-28T05:00:00Z``），列宽 64
+    season_id: Mapped[str | None] = mapped_column(String(64), index=True)
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     previous_rank: Mapped[int | None] = mapped_column(Integer)
     # 都城榜没有 tag，只有 name —— 故可空

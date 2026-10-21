@@ -188,8 +188,9 @@ async def get_league_season_players(
 ) -> dict[str, Any]:
     """赛季玩家排名。
 
-    **官方默认只返回 10 条**（``limit`` 上限 50），不显式传的话赛季榜会静默
-    变成"只有前 10 名"。
+    **``limit`` 必须在 100–25000 之间**（2026-10-21 实测）：传 50 会 400
+    ``Pagination parameter 'limit' has to be between 100 and 25 000``。不传则用
+    官方默认值（远小于采集想要的条数），所以采集必须显式传。
     """
     params = {"limit": limit} if limit is not None else None
     return await client.get(f"/leagues/{league_id}/seasons/{season_id}", params)

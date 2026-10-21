@@ -398,7 +398,7 @@ async def test_get_league_season_players_path():
 
 
 async def test_get_league_season_players_passes_limit():
-    """官方默认只回 10 条，采集必须显式带 limit，否则赛季榜静默只剩前 10 名。"""
+    """赛季榜的 limit 必须在 100–25000；采集要显式传（官方默认远小于采集需要的条数）。"""
     calls = []
 
     def handler(request):
@@ -409,7 +409,7 @@ async def test_get_league_season_players_passes_limit():
     try:
         from app.coc.endpoints import get_league_season_players
 
-        await get_league_season_players(client, 105000036, "2026-09", limit=50)
-        assert calls[0] == "/v1/leagues/105000036/seasons/2026-09?limit=50"
+        await get_league_season_players(client, 29000022, "2026-09", limit=200)
+        assert calls[0] == "/v1/leagues/29000022/seasons/2026-09?limit=200"
     finally:
         await client.aclose()

@@ -362,6 +362,24 @@ async def test_replace_rankings_stamps_fetched_at_as_aware_utc(session):
     assert row.fetched_at.tzinfo is not None
 
 
+async def test_replace_rankings_accepts_v2_season_id(session):
+    """赛季榜的 ``season_id`` 也要装得下 ``v2-<ISO>``（23 字符，列宽 64）。"""
+    season_id = "v2-2026-09-28T05:00:00Z"
+    written = await replace_rankings(
+        session,
+        RankingKind.season_players,
+        None,
+        29000022,
+        season_id,
+        [_clan(1, "#AAA", "A")],
+    )
+    assert written == 1
+    row = (
+        await session.execute(select(Ranking).where(Ranking.season_id == season_id))
+    ).scalar_one()
+    assert row.league_id == 29000022
+
+
 async def test_replace_rankings_takes_write_lock_before_delete(session):
     """写 rankings 之前必须先拿顾问锁。
 

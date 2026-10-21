@@ -206,8 +206,8 @@ docker compose ps
 > 复现镜像环境。**加了新依赖记得进 `dependencies`。**
 
 ```bash
-docker compose exec api alembic upgrade head    # 跑完 9 个迁移
-docker compose exec api alembic current         # 期望： d4c8a36b19e6 (head)
+docker compose exec api alembic upgrade head    # 跑完 10 个迁移
+docker compose exec api alembic current         # 期望： a7f3c1d90e42 (head)
 ```
 
 表数量核对【已验证·本机同一迁移链，2026-10-19 实测】：
@@ -536,6 +536,7 @@ docker compose exec api alembic upgrade head
 > **首次真实 `up` 已于 2026-10-20 在 Linux 服务器上跑通**，第 1–5 项已逐条核对通过
 > （两个镜像构建完成、三容器 healthy、`alembic current` = `d4c8a36b19e6 (head)`、
 > 表数 28）。**第 6–12 项（导入数据与冒烟）当时尚未执行。**
+> 该 head 之后已推进（当前 `a7f3c1d90e42`，迁移 0010 放宽赛季 id 列宽），表数不变。
 > 首跑还暴露了「镜像缺 `itsdangerous`」的缺陷，已修（账本 Task 14）——这正是本清单存在的意义：
 > 文档写对了不等于栈跑得起来。
 
@@ -547,7 +548,7 @@ docker compose exec api alembic upgrade head
 | 1 | compose 校验 | `docker compose config --quiet` | exit 0，无输出 |
 | 2 | 镜像构建 | `docker compose build` | 两个本地镜像构建成功 |
 | 3 | 容器健康 | `docker compose ps` | §3 表格状态 |
-| 4 | 迁移 | `docker compose exec api alembic current` | `d4c8a36b19e6 (head)`【已验证·本机同迁移链】 |
+| 4 | 迁移 | `docker compose exec api alembic current` | `a7f3c1d90e42 (head)`【已验证·本机同迁移链】 |
 | 5 | 表数 | information_schema 计数 | 28（§3）【已验证·本机】 |
 | 6 | 升级数据 | 2073 行按四类分布 | §4【已验证·本机】 |
 | 7 | 探针 | `/healthz` `/readyz` | §8 第 1/2 行 |

@@ -1176,6 +1176,10 @@ GET /v1/leagues/{leagueId}/seasons
 > 返回的 `items` **由旧到新**（从 `2015-07` 开始）分页给出，拿当前赛季必须顺着
 > `paging.cursors.after` 翻到最后一页，不能取 `items[0]`。赛季元素只有 `id`，
 > 没有 `name` / `startTime`。
+>
+> `id` 有两种格式：旧的 `2015-07`，以及 2026-09 起的 `v2-2026-09-28T05:00:00Z`
+> （23 字符）。判断“最新赛季”要先抠出日期再比 —— 裸字符串比会让 `v2-...` 永远
+> 排在最前（字母 > 数字）。
 
 **查询参数**：`limit`（默认 `10`，`1`–`50`）、`after`、`before`
 
@@ -1194,7 +1198,8 @@ GET /v1/leagues/{leagueId}/seasons
 GET /v1/leagues/{leagueId}/seasons/{seasonId}
 ```
 
-**查询参数**：`limit`（默认 `10`，`1`–`50`）、`after`、`before`
+**查询参数**：`limit` **必须在 `100`–`25000` 之间**（2026-10-21 实测；传 `50` 会
+`400 Pagination parameter 'limit' has to be between 100 and 25 000`），另有 `after`、`before`。
 
 ```json
 {

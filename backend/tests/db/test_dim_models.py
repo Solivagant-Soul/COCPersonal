@@ -82,3 +82,19 @@ async def test_same_season_id_allowed_across_leagues(session):
     await session.commit()
     count = len((await session.execute(select(Season))).scalars().all())
     assert count == 2
+
+
+async def test_season_id_accepts_v2_format(session):
+    """2026-09 起赛季 id 变成 ``v2-<ISO>``（23 字符），列宽不够会直接插入失败。
+
+    旧列宽 ``VARCHAR(10)`` 下这条会报 ``StringDataRightTruncation``，而自动建表
+    的测试库永远发现不了 —— 迁移 0010 就是为它写的。
+    """
+    season_id = "v2-2026-09-28T05:00:00Z"
+    session.add(Season(league_id=29000022, id=season_id))
+    await session.commit()
+
+    row = (
+        await session.execute(select(Season).where(Season.id == season_id))
+    ).scalar_one()
+    assert row.league_id == 29000022

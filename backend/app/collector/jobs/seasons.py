@@ -13,13 +13,15 @@
   for legendary league"。
 
 赛季清单**由旧到新**分页返回（2015-07 起，默认一页 10 条），所以当前赛季要翻到
-最后一页，不能取第一条。
+最后一页，不能取第一条。赛季 id 有两种格式：旧的 ``2015-07``，以及 2026-09 起的
+``v2-2026-09-28T05:00:00Z``（23 字符，DB 列宽因此是 64，见迁移 0010）。
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,9 +46,22 @@ _SEASON_PAGE_LIMIT = 50
 #: 必须有上限：游标万一不推进，没有上限就是死循环。
 _MAX_SEASON_PAGES = 40
 
-#: 一次抓多少名次。官方默认只给 10 条、``limit`` 上限 50（更多要翻页，一期不做），
-#: 所以取满 50 而不是官方默认值 —— 默认值会让赛季榜静默只剩前 10 名。
-_SEASON_PLAYER_LIMIT = 50
+#: 一次抓多少名次。**官方要求 100–25000**：传 50 会 400
+#: "Pagination parameter 'limit' has to be between 100 and 25 000"（2026-10-21 实测；
+#: 仓库文档此前写的 1–50 只适用于赛季清单，不适用于赛季榜）。取 200 —— 够看，
+#: 又不必一次拉满两万条。
+_SEASON_PLAYER_LIMIT = 200
+
+
+def _season_sort_key(season_id: str) -> str:
+    """把赛季 id 归一成可比较的 ISO 日期前缀。
+
+    id 有两种格式：旧的 ``2015-07``，以及 2026-09 起的 ``v2-2026-09-28T05:00:00Z``。
+    直接按字符串比会在格式切换时选错（``v2-...`` 以字母开头，永远大于任何
+    ``2026-xx``），所以先抠出里面的日期再比。
+    """
+    match = re.search(r"\d{4}-\d{2}(?:-\d{2}T[\d:]+)?Z?", season_id)
+    return match.group(0) if match else season_id
 
 
 def _parse_time(value) -> dt.datetime | None:
@@ -123,10 +138,10 @@ async def collect_seasons(
     await session.commit()
 
     players_ok = 0
-    # 当前赛季 = id 最大（形如 ``YYYY-MM``，字典序即时间序）。**不要依赖接口顺序**：
-    # 官方是由旧到新分页，取第一条会拿到 2015-07。
+    # 当前赛季 = 日期最大的那个（id 形如 ``2024-01`` 或 ``v2-2026-09-28T05:00:00Z``）。
+    # **不要依赖接口顺序**，也不要比裸字符串 —— 见 ``_season_sort_key``。
     if rows:
-        season_id = max(rows, key=lambda row: row.id).id
+        season_id = max(rows, key=lambda row: _season_sort_key(row.id)).id
         try:
             rankings = await coc.get_league_season_players(
                 client, LEGEND_LEAGUE_ID, season_id, limit=_SEASON_PLAYER_LIMIT

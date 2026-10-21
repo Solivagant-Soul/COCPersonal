@@ -912,3 +912,50 @@ BuildKit（`docker:default` 驱动 + `=>` 进度格式），所以 cache mount �
 
 **验证**：513 passed（506 + 7 条新测试）；CLI 实测 `collect --help` 列出四个 job。
 
+---
+
+## Task 19：真实上游的赛季契约纠正（2026-10-21）
+
+**背景**：Task 18 之后逐个跑 `collect`。`leagues` 直接成功（88），`rankings` partial
+（1273 ok / 2 条上游 `525`，属正常），`seasons` **全 400**。三处错误都来自「照抄社区实现
++ 手写文档」，没有一条是实测来的。
+
+**服务器上逐条探针得到的契约**（2026-10-21，真实 Token）：
+
+| 传什么 | 结果 |
+| --- | --- |
+| `/warleagues` 的 `48000000` | `400 Unknown value for parameter leagueId` |
+| `/leaguetiers` 的 `105000036`（Legend I） | 同上 400 |
+| `/leagues` 的 `29000020` / `29000021` | `400 Seasons are available only for legendary league` |
+| `/leagues` 的 `29000022`（Legend League） | `200` |
+
+1. **联赛 id 有三套空间**：warleague `48000000`、联赛层级 tier `105000xxx`、联赛
+   `/leagues` `290000xx`。赛季接口**只认第三套**，且只有 Legend League（`29000022`）
+   有赛季。此前用的 `clashofclans.js` 常量 `LEGEND_LEAGUE_ID = 105000036` 对这个接口是错的。
+2. **赛季清单由旧到新分页**：`2015-07` → `v2-2026-09-28T05:00:00Z`，共 136 条，
+   一页 50（3 页）。取 `items[0]` 当"当前赛季"会永远刷 2015-07 那份榜，而且**不报错**。
+3. **赛季 id 从 2026-09 起换成 `v2-<ISO>`（23 字符）**，旧的 `seasons.id VARCHAR(10)` /
+   `rankings.season_id VARCHAR(16)` 装不下 → 插入报 `StringDataRightTruncation`。
+4. **赛季榜的 `limit` 必须在 100–25000**：传 50 会 `400 Pagination parameter 'limit'
+   has to be between 100 and 25 000`。仓库文档写的 `1–50` 只适用于赛季**清单**。
+5. `rankings` 的死锁与 525 无关：是「定时 + 手动」两个进程同时全量替换同一批 scope，
+   各持一个长事务互等。
+
+**处置**：
+
+- `LEGEND_LEAGUE_ID = 29000022`，并把三套 id 的区别写进代码注释与 `API接口说明.md`；
+- 赛季清单**翻页到底**（`limit=50` + `after` 游标，上限 40 页），当前赛季用
+  `_season_sort_key()` 把两种 id 归一成 ISO 日期后取最大（裸字符串比会让 `v2-...`
+  永远排第一，下次换回旧格式就选错）；
+- `_SEASON_PLAYER_LIMIT = 200`；
+- 迁移 **`0010_widen_season_ids`**（`a7f3c1d90e42`）：两列放宽到 `VARCHAR(64)`，
+  **head 因此从 `d4c8a36b19e6` 变为 `a7f3c1d90e42`**。生产**不自动跑迁移**，
+  发版必须 `docker compose exec api alembic upgrade head`；
+- `replace_rankings` 加事务级顾问锁（`pg_advisory_xact_lock(0x52414E4B)`）+ 按 scope
+  提交；`jobs/rankings.py` 只 select `Location.id`（裸 int），避免 rollback 让 ORM
+  实例过期后 `location.id` 触发同步懒加载 → `MissingGreenlet` 把整轮采集带崩。
+
+**教训**：`backend/docs/API接口说明.md` 是手写的参考，`limit` 范围和 id 空间都写错过。
+凡涉及「参数取值范围 / id 属于哪套空间」，一律先探针、再写回文档 —— 手写文档不是权威。
+
+

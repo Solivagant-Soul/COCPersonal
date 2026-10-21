@@ -268,7 +268,7 @@ async def test_collect_seasons_writes_season_rows_and_current_season_rankings(se
     list_calls = [c for c in client.calls if c[1] == "/leagues/29000022/seasons"]
     assert list_calls[0][2] == {"limit": 50}
     player_calls = [c for c in client.calls if c[1].endswith("/seasons/2026-09")]
-    assert player_calls and player_calls[0][2] == {"limit": 50}
+    assert player_calls and player_calls[0][2] == {"limit": 200}
 
 
 async def test_collect_seasons_pages_to_the_latest_season(session, settings):
@@ -299,6 +299,22 @@ async def test_collect_seasons_pages_to_the_latest_season(session, settings):
     assert len(player_calls) == 1, f"只有当前赛季该抓排名，实际：{player_calls}"
     list_calls = [c for c in client.calls if c[1] == "/leagues/29000022/seasons"]
     assert len(list_calls) == 2, f"应该翻两页，实际：{list_calls}"
+
+
+async def test_season_sort_key_handles_both_id_formats():
+    """赛季 id 有 ``2015-07`` 与 ``v2-2026-09-28T05:00:00Z`` 两种格式。
+
+    裸字符串比会把 ``v2-...`` 永远排在最前（字母 > 数字），换回旧格式的下个赛季
+    就会被判成"不是最新" —— 于是赛季榜一直停在 v2 那个。
+    """
+    from app.collector.jobs.seasons import _season_sort_key
+
+    assert _season_sort_key("2024-01") == "2024-01"
+    assert _season_sort_key("v2-2026-09-28T05:00:00Z").startswith("2026-09-28")
+    ids = ["2015-07", "2026-10", "v2-2026-09-28T05:00:00Z"]
+    assert max(ids, key=_season_sort_key) == "2026-10"
+    # 反例：裸字符串会选错
+    assert max(ids) == "v2-2026-09-28T05:00:00Z"
 
 
 async def test_collect_seasons_records_failure_when_upstream_rejects_league_id(
