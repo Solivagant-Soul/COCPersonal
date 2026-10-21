@@ -150,6 +150,11 @@ Start-Process "C:\pgportable\pgsql\bin\postgres.exe" `
   只给从属关系建 FK 且 `ON DELETE CASCADE`。
 - **榜单刷新一律「按 scope 全量替换」**：同事务内 `DELETE` + 批量 `INSERT`，
   禁止逐条 upsert —— 否则掉榜的条目会永远残留。
+- **榜单只有「全服（32000000）的部落榜与玩家榜」**（2026-10-22 收窄）。
+  都城榜 / 部落基地榜 / 玩家基地榜已停采、路由已删（404）。
+  **注意 Global 的 `isCountry` 是 false** —— 靠 `is_country` 过滤会把它漏掉，
+  「只查全服」最容易写错的就是这一处。赛季榜（`season_players`）是另一条
+  scope（`league_id` + `season_id`，无 `location_id`），不受影响。
 - 所有官方时间戳按 UTC 存 `TIMESTAMPTZ`，**禁止裸 naive datetime**（服务器在大陆，
   naive 会让 TTL 判定偏差 8 小时）。mapper 的 `now` 一律由调用方注入，不在内部取时间。
 - tag 大小写不敏感：入库/比较前统一 `app.coc.tags.normalize_tag()` 归一化为 `#大写`，

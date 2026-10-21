@@ -74,13 +74,13 @@ export interface LocationsPage {
   total: number
 }
 
-/** 榜单类型，与后端 `RankingKind` 的字符串取值一致。 */
-export type RankingKind =
-  | 'clans'
-  | 'players'
-  | 'capitals'
-  | 'clans_builder_base'
-  | 'players_builder_base'
+/**
+ * 榜单类型，与后端 `RankingKind` 的字符串取值一致。
+ *
+ * 只有部落榜与玩家榜 —— 都城榜 / 部落基地榜 / 玩家基地榜已随「只收全服 +
+ * 只收部落与玩家数据」的需求一并移除（后端路由返回 404）。
+ */
+export type RankingKind = 'clans' | 'players'
 
 export interface RankingRow {
   rank: number
@@ -117,9 +117,15 @@ export function getLocations(): Promise<Envelope<LocationsPage>> {
   return request<LocationsPage>('/api/v1/locations')
 }
 
+/**
+ * 全服的地区 ID。官方地区 ID 的高位段是 32000000，Global 是 32000000
+ * （注意它的 isCountry 是 false —— 靠「国家」过滤找不到全服）。
+ */
+export const GLOBAL_LOCATION_ID = 32000000
+
 export function getRankings(
   kind: RankingKind,
-  locationId: number,
+  locationId: number = GLOBAL_LOCATION_ID,
   page = 1,
   pageSize = 20,
 ): Promise<Envelope<RankingsPage>> {

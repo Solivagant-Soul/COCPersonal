@@ -8,6 +8,10 @@
 
 ``page_size`` 走 Task 9 建立的 ``clamp_page_size``：超限截断为 50 而非 422
 （AGENTS.md 硬规矩）。``page`` 越界返回空列表而非 404。
+
+**只提供全服（Global, 32000000）的部落榜与玩家榜**（2026-10-22 收窄）。
+都城榜 / 部落基地榜 / 玩家基地榜的路由与采集一并移除 —— 前端是唯一消费方，
+没有外部调用方，保留只会让人以为"还有榜但没数据"。
 """
 
 import datetime as dt
@@ -23,20 +27,14 @@ from app.db.models import CollectorRun, League, Location, Ranking, Season
 
 router = APIRouter(prefix="/api/v1")
 
-#: 中国。官方地区 ID 的高位段是 32000000，中国是 32000001。
-DEFAULT_LOCATION_ID = 32000001
+#: 全服。官方地区 ID 的高位段是 32000000，Global 是 32000000。
+#: **注意 Global 的 ``isCountry`` 是 false** —— 靠 ``is_country`` 过滤找不到它。
+DEFAULT_LOCATION_ID = 32000000
 
 #: 每种榜单对应的指标字段。前端按 kind 取，不用猜。
 _METRICS_BY_KIND = {
     str(RankingKind.clans): ("points", "members", "clanLevel"),
-    str(RankingKind.capitals): ("trophies",),
-    str(RankingKind.clans_builder_base): ("points", "members", "clanLevel"),
     str(RankingKind.players): ("trophies", "expLevel", "attackWins", "defenseWins"),
-    str(RankingKind.players_builder_base): (
-        "trophies",
-        "builderBaseTrophies",
-        "expLevel",
-    ),
 }
 
 
@@ -94,15 +92,19 @@ def _fresh_meta(fetched_at: dt.datetime | None) -> MetaOut:
 
 @router.get("/locations", response_model=None)
 async def list_locations(
-    country_only: bool = Query(default=True, description="只要国家级地区"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1),
 ):
+    """地区列表。**只返回全服**（Global, 32000000）。
+
+    榜单收窄成只看全服后（2026-10-22），前端不再需要挑地区 —— 保留几十个
+    国家选项只会让人以为「榜单是按国家分的」，而实际库里只有全服的数据。
+
+    仍保留分页参数：契约形状不变，前端现有的 ``getLocations()`` 调用不用改。
+    """
     session = await _session()
     try:
-        stmt = select(Location)
-        if country_only:
-            stmt = stmt.where(Location.is_country.is_(True))
+        stmt = select(Location).where(Location.id == DEFAULT_LOCATION_ID)
         total = (
             await session.execute(select(func.count()).select_from(stmt.subquery()))
         ).scalar_one()
@@ -127,7 +129,7 @@ async def list_locations(
 
 
 # --------------------------------------------------------------------------- #
-# 五类地区榜
+# 两类地区榜（部落 / 玩家）
 # --------------------------------------------------------------------------- #
 
 
@@ -189,17 +191,6 @@ list_rankings_clans = _make_board_route(
 )
 list_rankings_players = _make_board_route(
     "/rankings/players", RankingKind.players, "玩家榜"
-)
-list_rankings_capitals = _make_board_route(
-    "/rankings/capitals", RankingKind.capitals, "都城榜"
-)
-list_rankings_clans_builder_base = _make_board_route(
-    "/rankings/clans_builder_base", RankingKind.clans_builder_base, "部落基地榜"
-)
-list_rankings_players_builder_base = _make_board_route(
-    "/rankings/players_builder_base",
-    RankingKind.players_builder_base,
-    "玩家基地榜",
 )
 
 

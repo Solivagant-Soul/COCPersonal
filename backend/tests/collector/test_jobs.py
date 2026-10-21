@@ -388,14 +388,13 @@ async def test_collect_seasons_records_failure_when_upstream_rejects_league_id(
 
 
 async def test_collect_rankings_records_partial_failure(session, settings):
-    """三个地区、部落榜：第二个地区挂掉 → status=partial，ok/failed 如实。"""
-    await _seed_locations(session, 32000001, 32000002, 32000003)
+    """全服、部落榜：玩家榜挂掉 → status=partial，ok/failed 如实。"""
+    await _seed_locations(session, 32000000)
 
     def board(path, params):
-        if "/32000002/" in path:
+        if "/rankings/players" in path:
             raise CocUpstreamError("上游 5xx")
-        loc = path.split("/locations/")[1].split("/")[0]
-        return {"items": [{"tag": f"#T{loc}", "name": "X", "rank": 1}]}
+        return {"items": [{"tag": "#T1", "name": "X", "rank": 1}]}
 
     client = FakeClient(routes={"/rankings/": board})
     status = await run_job("rankings", settings, session, client=client)
@@ -405,12 +404,12 @@ async def test_collect_rankings_records_partial_failure(session, settings):
         await session.execute(select(CollectorRun).order_by(CollectorRun.id.desc()))
     ).scalars().first()
     assert run.status == "partial"
-    # 5 类榜单 × 3 个地区 = 15 个 scope，中间那个地区的 5 类全挂
-    assert run.items_failed == 5
-    assert run.items_ok == 10
+    # 全服 × 2 类榜 = 2 个 scope，其中玩家榜那 1 个挂掉
+    assert run.items_failed == 1
+    assert run.items_ok == 1
     assert run.error
-    # 失败明细要指明是哪个地区，不能只有一个数字
-    assert any("32000002" in str(d) for d in run.error["detail"])
+    # 失败明细要指明是哪个 scope，不能只有一个数字
+    assert any("players" in str(d) for d in run.error["detail"])
 
 
 async def test_collect_rankings_survives_db_error_in_one_scope(session, settings, monkeypatch):
@@ -420,12 +419,12 @@ async def test_collect_rankings_survives_db_error_in_one_scope(session, settings
     循环又去读 ``location.id`` —— ORM 实例已被 rollback expire，异步会话里同步
     懒加载直接 ``MissingGreenlet``，整轮 failed，后面的地区一个都没刷。
     """
-    await _seed_locations(session, 32000001, 32000002)
+    await _seed_locations(session, 32000000)
 
     real_replace = rankings_job.replace_rankings
 
     async def flaky(session_, kind, location_id, league_id, season_id, items, now=None):
-        if location_id == 32000001 and kind == RankingKind.clans:
+        if kind == RankingKind.clans:
             raise RuntimeError("deadlock detected")
         return await real_replace(
             session_, kind, location_id, league_id, season_id, items, now=now
@@ -442,15 +441,15 @@ async def test_collect_rankings_survives_db_error_in_one_scope(session, settings
         await session.execute(select(CollectorRun).order_by(CollectorRun.id.desc()))
     ).scalars().first()
     assert run.items_failed == 1
-    assert any("32000001" in str(d) for d in run.error["detail"])
-    # 挂掉的 scope 之外的都照常落库（2 地区 × 5 类 − 1）
+    assert any("clans" in str(d) for d in run.error["detail"])
+    # 挂掉的 scope 之外的都照常落库（全服 × 2 类 − 1）
     rows = (await session.execute(select(Ranking))).scalars().all()
-    assert len(rows) == 9
-    assert any(r.location_id == 32000002 for r in rows)
+    assert len(rows) == 1
+    assert rows[0].kind == str(RankingKind.players)
 
 
 async def test_collect_rankings_marks_failed_when_nothing_succeeds(session, settings):
-    await _seed_locations(session, 32000001, 32000002)
+    await _seed_locations(session, 32000000)
 
     async def always_fail(path, params):
         raise CocUpstreamError("上游 5xx")
@@ -467,7 +466,7 @@ async def test_collect_rankings_marks_failed_when_nothing_succeeds(session, sett
 
 
 async def test_collect_rankings_marks_success_when_all_ok(session, settings):
-    await _seed_locations(session, 32000001, 32000002)
+    await _seed_locations(session, 32000000)
     client = FakeClient(
         routes={"/rankings/clans": {"items": [{"tag": "#AAA", "name": "A", "rank": 1}]}}
     )
@@ -482,8 +481,16 @@ async def test_collect_rankings_marks_success_when_all_ok(session, settings):
     assert run.finished_at is not None
 
 
-async def test_collect_rankings_skips_non_country_locations(session, settings):
-    """只刷国家地区 —— 逐级地区有几百个，会让请求量翻十几倍。"""
+async def test_collect_rankings_only_touches_global(session, settings):
+    """**只刷全服**（32000000）。
+
+    需求收窄成「只看全服榜单」。原先是刷所有 is_country 的国家（几十个），
+    逐级地区还有几百个 —— 请求量翻十几倍，而库里只会留下没人看的数据。
+
+    注意 Global 的 ``is_country`` 是 **false** —— 靠 ``is_country`` 过滤会
+    把全服漏掉，那是最容易写错的一处。
+    """
+    session.add(Location(id=32000000, name="Global", is_country=False))
     session.add(Location(id=32000001, name="CN", is_country=True))
     session.add(Location(id=32000002, name="Province", is_country=False))
     await session.commit()
@@ -493,27 +500,20 @@ async def test_collect_rankings_skips_non_country_locations(session, settings):
 
     clan_calls = [c for c in client.calls if c[1].endswith("/rankings/clans")]
     assert len(clan_calls) == 1
-    assert clan_calls[0][1].startswith("/locations/32000001/")
+    assert clan_calls[0][1].startswith("/locations/32000000/"), "只该刷全服"
 
 
-async def test_collect_rankings_writes_all_five_kinds(session, settings):
-    """五类地区榜都要刷。
+async def test_collect_rankings_writes_only_clans_and_players(session, settings):
+    """只写部落榜与玩家榜。
 
-    每类都必须给数据：``replace_rankings`` 对空列表是**清空该 scope**，只给两类
-    数据的话另外三类刷完就是空 —— 那是正确行为，但断言要按这个前提写。
+    都城榜 / 部落基地榜 / 玩家基地榜已移除（2026-10-22）：需求只要求部落和
+    玩家的数据。它们没有消费方，继续采集就是白烧令牌桶。
     """
-    await _seed_locations(session, 32000001)
+    await _seed_locations(session, 32000000)
     client = FakeClient(
         routes={
             "/rankings/clans": {"items": [{"tag": "#AAA", "name": "A", "rank": 1}]},
             "/rankings/players": {"items": [{"tag": "#P1", "name": "P1", "rank": 1}]},
-            "/rankings/capitals": {"items": [{"name": "首都", "rank": 1}]},
-            "/rankings/clans-builder-base": {
-                "items": [{"tag": "#AAA", "name": "A", "rank": 1}]
-            },
-            "/rankings/players-builder-base": {
-                "items": [{"tag": "#P1", "name": "P1", "rank": 1}]
-            },
         }
     )
     await run_job("rankings", settings, session, client=client)
@@ -524,15 +524,28 @@ async def test_collect_rankings_writes_all_five_kinds(session, settings):
     assert {str(k) for k in kinds} == {
         str(RankingKind.clans),
         str(RankingKind.players),
-        str(RankingKind.capitals),
-        str(RankingKind.clans_builder_base),
-        str(RankingKind.players_builder_base),
     }
+
+
+async def test_collect_rankings_does_not_request_removed_kinds(session, settings):
+    """连请求都不能发 —— 不只是不写库。
+
+    多打一次官方接口 = 多消耗一份令牌桶额度，而那些数据没人看。
+    """
+    await _seed_locations(session, 32000000)
+    client = FakeClient(routes={"/rankings/": {"items": []}})
+    await run_job("rankings", settings, session, client=client)
+
+    paths = [c[1] for c in client.calls]
+    assert not any("capitals" in p for p in paths), paths
+    assert not any("builder-base" in p for p in paths), paths
+    # 只该有两种榜
+    assert len(paths) == 2, paths
 
 
 async def test_collect_rankings_passes_limit_to_official(session, settings):
     """limit 必须透传，否则官方默认只回一小页，榜单看着"少了一半"。"""
-    await _seed_locations(session, 32000001)
+    await _seed_locations(session, 32000000)
     client = FakeClient(routes={"/rankings/clans": {"items": []}})
     await run_job("rankings", settings, session, client=client)
 

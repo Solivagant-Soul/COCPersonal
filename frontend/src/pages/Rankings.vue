@@ -1,17 +1,11 @@
 <template>
   <div class="page">
     <h2>排行榜</h2>
+    <p class="page__hint">
+      全服（{{ GLOBAL_LOCATION_ID }}）的部落榜与玩家榜。
+    </p>
 
     <div class="toolbar">
-      <el-select v-model="locationId" placeholder="选择地区" class="toolbar__select">
-        <el-option
-          v-for="loc in locations"
-          :key="loc.id"
-          :label="loc.name"
-          :value="loc.id"
-        />
-      </el-select>
-
       <el-radio-group v-model="kind">
         <el-radio-button v-for="opt in KIND_OPTIONS" :key="opt.value" :value="opt.value">
           {{ opt.label }}
@@ -42,9 +36,8 @@
 import { onMounted, ref, watch } from 'vue'
 
 import {
-  getLocations,
+  GLOBAL_LOCATION_ID,
   getRankings,
-  type Location,
   type RankingKind,
   type RankingRow,
 } from '../api/endpoints'
@@ -53,19 +46,11 @@ import ErrorCard from '../components/ErrorCard.vue'
 import LoadingBlock from '../components/LoadingBlock.vue'
 import RankingTable from '../components/RankingTable.vue'
 
-/** 夹具与官方一致：32000001 = China。找不到就退回列表第一个。 */
-const DEFAULT_LOCATION_ID = 32000001
-
 const KIND_OPTIONS: Array<{ value: RankingKind; label: string }> = [
   { value: 'clans', label: '部落' },
   { value: 'players', label: '玩家' },
-  { value: 'capitals', label: '都城' },
-  { value: 'clans_builder_base', label: '部落基地' },
-  { value: 'players_builder_base', label: '玩家基地' },
 ]
 
-const locations = ref<Location[]>([])
-const locationId = ref<number | null>(null)
 const kind = ref<RankingKind>('clans')
 
 const rows = ref<RankingRow[]>([])
@@ -80,23 +65,11 @@ function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError('UNKNOWN_ERROR', '请求失败', 0)
 }
 
-async function loadLocations() {
-  try {
-    const res = await getLocations()
-    locations.value = res.data.items
-    const preferred = locations.value.find((l) => l.id === DEFAULT_LOCATION_ID)
-    locationId.value = preferred?.id ?? locations.value[0]?.id ?? null
-  } catch (err) {
-    error.value = toApiError(err)
-  }
-}
-
 async function fetchRankings() {
-  if (locationId.value === null) return
   loading.value = true
   error.value = null
   try {
-    const res = await getRankings(kind.value, locationId.value, page.value, pageSize.value)
+    const res = await getRankings(kind.value, GLOBAL_LOCATION_ID, page.value, pageSize.value)
     rows.value = res.data.items
     total.value = res.data.total
   } catch (err) {
@@ -111,14 +84,13 @@ function onSizeChange() {
   void fetchRankings()
 }
 
-// 切地区或切榜单类型都回到第 1 页重拉
-watch([kind, locationId], () => {
+// 切榜单类型回到第 1 页重拉
+watch(kind, () => {
   page.value = 1
   void fetchRankings()
 })
 
-// 只加载地区；locationId 一旦就位，上面的 watch 会发出第一次拉取
-onMounted(loadLocations)
+onMounted(fetchRankings)
 </script>
 
 <style scoped>
@@ -128,9 +100,6 @@ onMounted(loadLocations)
   gap: 16px;
   margin-bottom: 16px;
   flex-wrap: wrap;
-}
-.toolbar__select {
-  width: 220px;
 }
 .pager {
   margin-top: 16px;

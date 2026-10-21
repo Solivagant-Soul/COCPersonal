@@ -4,11 +4,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../api/endpoints', () => ({
-  getLocations: vi.fn(),
+  GLOBAL_LOCATION_ID: 32000000,
   getRankings: vi.fn(),
 }))
 
-import { getLocations, getRankings } from '../api/endpoints'
+import { getRankings } from '../api/endpoints'
 import Rankings from './Rankings.vue'
 
 const router = createRouter({
@@ -19,17 +19,6 @@ const router = createRouter({
     { path: '/clans/:tag', name: 'clan', component: { template: '<div/>' } },
   ],
 })
-
-const locations = {
-  data: {
-    items: [
-      { id: 32000010, name: 'Bosnia and Herzegovina', countryCode: 'BA' },
-      { id: 32000001, name: 'China', countryCode: 'CN' },
-    ],
-    total: 2,
-  },
-  meta: { cache: 'MISS', fetchedAt: null, ageSeconds: null, ttlSeconds: 21600 },
-}
 
 const clanRow = {
   rank: 1,
@@ -60,19 +49,30 @@ async function mountRankings() {
 
 describe('Rankings', () => {
   beforeEach(() => {
-    vi.mocked(getLocations).mockReset()
     vi.mocked(getRankings).mockReset()
-    vi.mocked(getLocations).mockResolvedValue(locations as never)
     vi.mocked(getRankings).mockResolvedValue(rankingsPage as never)
   })
 
-  it('初始加载地区，默认选中夹具里的国家地区 China(32000001)', async () => {
+  it('固定查全服（32000000），不再有地区选择器', async () => {
     const w = await mountRankings()
 
-    expect(getLocations).toHaveBeenCalled()
-    expect(getRankings).toHaveBeenCalledWith('clans', 32000001, 1, 20)
-    expect(w.text()).toContain('China')
+    expect(getRankings).toHaveBeenCalledWith('clans', 32000000, 1, 20)
     expect(w.text()).toContain('Reddit Zulu')
+    // 地区下拉框已经拿掉。
+    // **不能**断言没有 el-select —— el-pagination 的 layout 含 sizes，
+    // 它自己就渲染一个页长选择器。断言「没有地区选项」才对。
+    expect(w.text()).not.toContain('选择地区')
+    expect(w.find('.toolbar__select').exists()).toBe(false)
+  })
+
+  it('只提供部落与玩家两个榜种', async () => {
+    const w = await mountRankings()
+
+    const labels = w.findAll('.el-radio-button__inner').map((b) => b.text())
+    expect(labels).toEqual(['部落', '玩家'])
+    // 已移除的三类榜不该再出现在选项里
+    expect(w.text()).not.toContain('都城')
+    expect(w.text()).not.toContain('基地')
   })
 
   it('切换榜单类型触发重新拉取', async () => {
@@ -83,7 +83,7 @@ describe('Rankings', () => {
     await group.setValue('players')
     await flushPromises()
 
-    expect(getRankings).toHaveBeenCalledWith('players', 32000001, 1, 20)
+    expect(getRankings).toHaveBeenCalledWith('players', 32000000, 1, 20)
   })
 
   it('空 items 显示「暂无数据」空态，不是错误', async () => {
@@ -108,7 +108,7 @@ describe('Rankings', () => {
     await pager.vm.$emit('size-change', 100)
     await flushPromises()
 
-    expect(getRankings).toHaveBeenCalledWith('clans', 32000001, 1, 100)
+    expect(getRankings).toHaveBeenCalledWith('clans', 32000000, 1, 100)
     expect(w.text()).toContain('Reddit Zulu')
     expect(w.text()).not.toContain('查询失败')
   })

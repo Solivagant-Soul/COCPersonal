@@ -17,6 +17,7 @@ import pytest
 from app.collector.rankings_service import RankingKind
 from app.db.models import CollectorRun, League, Ranking, Season
 
+GLOBAL = 32000000
 CN = 32000001
 US = 32000002
 WAR_LEAGUE = 48000000
@@ -41,6 +42,12 @@ async def board(session):
         Ranking(kind=str(RankingKind.players), location_id=CN, rank=1,
                 tag="#P1", name="P1", trophies=6000, exp_level=300,
                 attack_wins=30, defense_wins=12, fetched_at=now),
+        Ranking(kind=str(RankingKind.clans), location_id=GLOBAL, rank=1,
+                tag="#G1", name="G1", points=99000, members=50, clan_level=18,
+                fetched_at=now),
+        Ranking(kind=str(RankingKind.players), location_id=GLOBAL, rank=1,
+                tag="#GP1", name="GP1", trophies=9900, exp_level=500,
+                attack_wins=300, defense_wins=120, fetched_at=now),
     ])
     await session.commit()
 
@@ -48,14 +55,19 @@ async def board(session):
 BOARDS = [
     ("clans", str(RankingKind.clans)),
     ("players", str(RankingKind.players)),
-    ("capitals", str(RankingKind.capitals)),
-    ("clans_builder_base", str(RankingKind.clans_builder_base)),
-    ("players_builder_base", str(RankingKind.players_builder_base)),
+]
+
+#: 已移除的榜（2026-10-22 收窄成全服 + 部落/玩家）。路由应当 404 ——
+#: 留着返回空列表会让人以为"榜还在只是没数据"。
+REMOVED_BOARDS = [
+    "capitals",
+    "clans_builder_base",
+    "players_builder_base",
 ]
 
 
 # --------------------------------------------------------------------------- #
-# 五类地区榜
+# 两类地区榜
 # --------------------------------------------------------------------------- #
 
 
@@ -66,13 +78,28 @@ async def test_each_board_endpoint_exists(client, path, kind):
     assert resp.json()["data"]["kind"] == kind
 
 
-async def test_rankings_clans_defaults_to_china(client, board):
+@pytest.mark.parametrize("path", REMOVED_BOARDS)
+async def test_removed_board_endpoints_are_gone(client, path):
+    """已移除的榜必须是 404，不是 200 + 空列表。
+
+    返回空列表会让人以为"榜还在、只是没数据"，于是反复刷新等它出现。
+    404 才说得清"这个榜没有了"。
+    """
+    resp = await client.get(f"/api/v1/rankings/{path}")
+    assert resp.status_code == 404
+
+
+async def test_rankings_clans_defaults_to_global(client, board):
+    """默认查全服（32000000）。
+
+    榜单收窄成「只看全服」后，默认地区就是全服 —— 不再是中国。
+    """
     resp = await client.get("/api/v1/rankings/clans")
     assert resp.status_code == 200
     body = resp.json()
     assert body["meta"]["cache"] in {"HIT", "MISS", "STALE"}
     tags = [i["tag"] for i in body["data"]["items"]]
-    assert tags == ["#A1", "#A2", "#A3"], "默认应查中国（32000001）"
+    assert tags == ["#G1"], "默认应查全服（32000000）"
 
 
 async def test_rankings_sorted_by_rank_ascending(client, board):
@@ -82,6 +109,11 @@ async def test_rankings_sorted_by_rank_ascending(client, board):
 
 
 async def test_rankings_respects_location_id(client, board):
+    """locationId 仍然生效 —— 传别的地区就查那个地区。
+
+    收窄的是「**采集**哪些地区」，不是「API 能不能按地区查」。留着这个参数
+    是为了契约不破：前端可能还带着 locationId 发请求。
+    """
     body = (await client.get(f"/api/v1/rankings/clans?locationId={US}")).json()
     assert [i["tag"] for i in body["data"]["items"]] == ["#U1"]
 
@@ -125,7 +157,7 @@ async def test_rankings_page_size_is_capped_at_50(client, board):
     """``?page_size=500`` → 200 + 截断到 50，不是 422。"""
     resp = await client.get("/api/v1/rankings/clans?page_size=500")
     assert resp.status_code == 200
-    assert resp.json()["data"]["total"] == 3  # 总数与 page_size 无关
+    assert resp.json()["data"]["total"] == 1  # 全服 scope 只有 1 条；总数与 page_size 无关
 
 
 async def test_rankings_page_beyond_end_returns_empty(client, board):
@@ -136,7 +168,7 @@ async def test_rankings_page_beyond_end_returns_empty(client, board):
 
 
 async def test_rankings_page_two_returns_remaining(client, board):
-    body = (await client.get("/api/v1/rankings/clans?page_size=2&page=2")).json()
+    body = (await client.get(f"/api/v1/rankings/clans?locationId={CN}&page_size=2&page=2")).json()
     assert [i["tag"] for i in body["data"]["items"]] == ["#A3"]
 
 
@@ -147,13 +179,13 @@ async def test_rankings_page_size_zero_returns_400(client, board):
 
 
 async def test_rankings_exposes_metrics_per_kind(client, board):
-    body = (await client.get("/api/v1/rankings/clans")).json()
+    body = (await client.get(f"/api/v1/rankings/clans?locationId={CN}")).json()
     first = body["data"]["items"][0]
     assert first["points"] == 5000
     assert first["members"] == 45
     assert first["clanLevel"] == 15
 
-    players = (await client.get("/api/v1/rankings/players")).json()
+    players = (await client.get(f"/api/v1/rankings/players?locationId={CN}")).json()
     p = players["data"]["items"][0]
     assert p["trophies"] == 6000
     assert p["expLevel"] == 300
@@ -162,7 +194,7 @@ async def test_rankings_exposes_metrics_per_kind(client, board):
 
 async def test_rankings_includes_previous_rank(client, session):
     now = dt.datetime.now(UTC)
-    session.add(Ranking(kind=str(RankingKind.clans), location_id=CN, rank=1,
+    session.add(Ranking(kind=str(RankingKind.clans), location_id=GLOBAL, rank=1,
                         previous_rank=7, tag="#A1", name="A1", fetched_at=now))
     await session.commit()
     body = (await client.get("/api/v1/rankings/clans")).json()
@@ -260,8 +292,14 @@ async def test_list_leagues_invalid_kind_returns_400(client):
 # --------------------------------------------------------------------------- #
 
 
-async def test_locations_lists_countries(client, session):
+async def test_locations_lists_only_global(client, session):
+    """只返回全服。
+
+    榜单收窄成只看全服后，前端不再需要挑地区 —— 保留几十个国家选项只会让人
+    以为「榜单是按国家分的」，而实际库里只有全服的数据。
+    """
     session.add_all([
+        _loc(32000000, "Global", False),
         _loc(32000001, "China", True),
         _loc(32000002, "United States", True),
         _loc(32000003, "Gansu", False),
@@ -270,14 +308,20 @@ async def test_locations_lists_countries(client, session):
 
     body = (await client.get("/api/v1/locations")).json()
     names = {i["name"] for i in body["data"]["items"]}
-    assert names == {"China", "United States"}, "默认只返国家级"
+    assert names == {"Global"}, "只该返回全服"
+    assert body["data"]["total"] == 1
 
 
-async def test_locations_can_include_provinces(client, session):
-    session.add_all([_loc(32000001, "China", True), _loc(32000003, "Gansu", False)])
+async def test_locations_global_is_present_even_though_not_a_country(client, session):
+    """**Global 的 isCountry 是 false** —— 靠 is_country 过滤会把它漏掉。
+
+    这正是「只查全服」最容易写错的一处：全服在官方数据里根本不算"国家"。
+    """
+    session.add(_loc(32000000, "Global", False))
     await session.commit()
-    body = (await client.get("/api/v1/locations?country_only=false")).json()
-    assert len(body["data"]["items"]) == 2
+
+    body = (await client.get("/api/v1/locations")).json()
+    assert [i["id"] for i in body["data"]["items"]] == [32000000]
 
 
 def _loc(lid, name, is_country):
@@ -366,9 +410,6 @@ async def test_cache_value_is_uppercase(client, board, path):
     [
         "/api/v1/rankings/clans",
         "/api/v1/rankings/players",
-        "/api/v1/rankings/capitals",
-        "/api/v1/rankings/clans_builder_base",
-        "/api/v1/rankings/players_builder_base",
         "/api/v1/locations",
     ],
 )

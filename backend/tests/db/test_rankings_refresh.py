@@ -257,28 +257,16 @@ async def test_replace_rankings_maps_player_fields(session):
     assert row.clan_name == "A"
 
 
-async def test_replace_rankings_maps_capital_without_tag(session):
-    """都城榜没有 tag，只有 name —— 必须能存下，且 tag 为 None。"""
-    await replace_rankings(
-        session,
-        RankingKind.capitals,
-        CN,
-        None,
-        None,
-        [{"name": "首都", "capitalHallLevel": 12, "trophies": 2500,
-          "rank": 1, "previousRank": 2}],
-    )
-    row = (
-        await session.execute(select(Ranking).where(Ranking.location_id == CN))
-    ).scalar_one()
-    assert row.tag is None
-    assert row.name == "首都"
-
-
 async def test_replace_rankings_maps_builder_base_trophies(session):
+    """``builderBaseTrophies`` 字段仍要正确落库。
+
+    玩家基地榜本身已移除（2026-10-22），但这个字段在**玩家详情页**还在用
+    （``/api/v1/players/{tag}`` 返回 ``builderBaseTrophies``），所以映射逻辑
+    不能跟着榜种一起删。
+    """
     await replace_rankings(
         session,
-        RankingKind.players_builder_base,
+        RankingKind.players,
         CN,
         None,
         None,
@@ -290,21 +278,20 @@ async def test_replace_rankings_maps_builder_base_trophies(session):
     assert row.builder_base_trophies == 4200
 
 
-async def test_replace_rankings_maps_clan_level_for_builder_base(session):
+async def test_replace_rankings_maps_clan_level(session):
+    """``clanLevel`` 字段仍要正确落库（部落榜与部落详情页都在用）。"""
     await replace_rankings(
         session,
-        RankingKind.clans_builder_base,
+        RankingKind.clans,
         CN,
         None,
         None,
-        [{"tag": "#AAA", "name": "A", "rank": 1, "clanLevel": 18,
-          "builderBaseTrophies": 3000}],
+        [{"tag": "#AAA", "name": "A", "rank": 1, "clanLevel": 18}],
     )
     row = (
         await session.execute(select(Ranking).where(Ranking.location_id == CN))
     ).scalar_one()
     assert row.clan_level == 18
-    assert row.builder_base_trophies == 3000
 
 
 # --------------------------------------------------------------------------- #
@@ -422,13 +409,15 @@ async def test_ranking_has_no_fk_to_dimension_tables(session):
         raise AssertionError(f"rankings 不应建外键，却有 {fk.elements[0].target_fullname}")
 
 
-def test_ranking_kind_covers_all_six_kinds():
+def test_ranking_kind_covers_all_kinds():
+    """榜单类型只有 3 类（2026-10-22 收窄）。
+
+    都城榜 / 部落基地榜 / 玩家基地榜已移除 —— 需求只要部落和玩家的数据，
+    而它们没有消费方。赛季榜是另一条 scope（league + season），还在用。
+    """
     assert {k.value for k in RankingKind} == {
         "clans",
         "players",
-        "capitals",
-        "clans_builder_base",
-        "players_builder_base",
         "season_players",
     }
 

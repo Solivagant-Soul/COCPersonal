@@ -4,8 +4,16 @@
 ``MemoryRateLimiter``），直接被官方限流。限速是 ``CocClient`` 的职责，这一层
 不再自己写 ``sleep``（两处限速叠加会让采集慢到没必要）。
 
-**只刷国家地区**（``is_country = true``）：逐级地区有几百个，刷全量会让请求量
-翻十几倍，而小程序用户查的是国家级榜单。
+**只刷全服（Global, 32000000）× 2 类榜（部落 / 玩家）**。
+
+- 地区收成 1 个：原先刷所有 ``is_country = true`` 的国家（几十个），逐级地区
+  还有几百个。需求收窄成"只看全服榜单"，于是每个 scope 的请求量与库里的
+  存量都按比例降下来。
+- 榜种收成 2 类：都城榜 / 部落基地榜 / 玩家基地榜不再采集。前端也不再展示它们
+  （见 ``app/api/routes/rankings.py``），留着就只是白烧令牌桶。
+
+**赛季榜不在这里**：它是另一条链路（``jobs/seasons.py``），scope 是
+``(league_id, season_id)`` 而非 location。
 """
 
 from __future__ import annotations
@@ -23,20 +31,21 @@ from app.db.models import Location
 
 logger = logging.getLogger("coc.collector.rankings")
 
-#: (kind, 拉取函数)。都城榜没有 tag，映射层会相应处理。
+#: 全服。官方地区 ID 的高位段是 32000000，Global 是 32000000（``isCountry=false``，
+#: 所以**不能**靠 ``is_country`` 过滤找出来 —— 那会漏掉它）。
+GLOBAL_LOCATION_ID = 32000000
+
+#: (kind, 拉取函数)。只有部落榜与玩家榜。
 _KIND_FETCHERS = {
     RankingKind.clans: coc.get_clan_rankings,
     RankingKind.players: coc.get_player_rankings,
-    RankingKind.capitals: coc.get_capital_rankings,
-    RankingKind.clans_builder_base: coc.get_clan_rankings_builder_base,
-    RankingKind.players_builder_base: coc.get_player_rankings_builder_base,
 }
 
 
 async def collect_rankings(
     client: CocClient, session: AsyncSession, now: dt.datetime | None = None
 ) -> dict[str, int]:
-    """刷全部国家地区 × 5 类地区榜。
+    """刷全服 × 2 类地区榜。
 
     返回 ``{"items_ok": n, "items_failed": m}`` —— **部分失败必须如实记账**。
     笼统记成成功会让"某个地区的榜单缺了一半"永远没人发现。
@@ -46,8 +55,12 @@ async def collect_rankings(
     # 循环里再读 ``location.id`` 就是一次同步懒加载 —— 异步会话里直接
     # ``MissingGreenlet``，一个 scope 的数据库错误会把整轮采集带崩
     # （2026-10-21 线上：死锁 → 回滚 → 下一个 ``location.id`` → job failed）。
+    #
+    # **只要全服**：Global 是 ``is_country=false``，所以这里按 id 直接取，
+    # 不走 ``is_country`` 过滤（走了会漏掉它 —— 这正是「只查全服」最容易
+    # 写错的一处：全服在官方数据里根本不算"国家"）。
     location_ids = (
-        await session.execute(select(Location.id).where(Location.is_country.is_(True)))
+        await session.execute(select(Location.id).where(Location.id == GLOBAL_LOCATION_ID))
     ).scalars().all()
 
     ok = 0

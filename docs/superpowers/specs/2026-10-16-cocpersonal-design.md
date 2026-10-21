@@ -125,7 +125,7 @@ frontend/src/
 | `/` | 查询首页（输入玩家 tag） | — |
 | `/players/:tag` | 玩家详情 | `GET /api/v1/players/{tag}` |
 | `/clans/:tag` | 部落详情 | `GET /api/v1/clans/{tag}` |
-| `/rankings` | 排行榜（地区 + 榜单类型切换） | `GET /api/v1/locations` + `GET /api/v1/rankings/{clans\|players\|capitals\|clans_builder_base\|players_builder_base}` |
+| `/rankings` | 排行榜（**全服**，部落 / 玩家两类） | `GET /api/v1/locations` + `GET /api/v1/rankings/{clans\|players}` |
 
 **API 客户端**（`src/api/request.ts`，移植小程序 `COC/utils/request.js` 的**契约**，用 axios 重写）：
 - 统一信封：成功 `{data, meta:{cache, fetched_at, age_seconds, ttl_seconds}}`；`meta` 蛇形→驼峰。
@@ -228,3 +228,9 @@ frontend/src/
 6. 本地联调跑通（PG + 后端 + Vite + 浏览器手测）。
 7. 部署资产（`frontend/Dockerfile`、`deploy/nginx.conf`、根 `docker-compose.yml`、`.env.example`）。
 8. 文档（根 `README.md` 的开发 / 构建 / 部署说明）。
+
+> **裁定（2026-10-22）**：排行榜收窄为「**全服（Global, 32000000）的部落榜与
+> 玩家榜**」。都城榜 / 部落基地榜 / 玩家基地榜不再采集，路由返回 404，
+> `/locations` 只返回全服（前端不再需要挑地区）。迁移 0011 清掉库里的历史行。
+> 赛季榜（`season_players`）**不受影响** —— 它是另一条 scope
+> （`league_id` + `season_id`，无 `location_id`）。

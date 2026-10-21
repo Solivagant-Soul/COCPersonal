@@ -236,33 +236,8 @@ async def get_player_rankings(
     )
 
 
-async def get_clan_rankings_builder_base(
-    client: CocClient, location_id: int, *, limit: int | None = None
-) -> dict[str, Any]:
-    params = {"limit": limit} if limit is not None else None
-    return await client.get(
-        f"/locations/{location_id}/rankings/clans-builder-base",
-        params=params,
-    )
-
-
-async def get_player_rankings_builder_base(
-    client: CocClient, location_id: int, *, limit: int | None = None
-) -> dict[str, Any]:
-    params = {"limit": limit} if limit is not None else None
-    return await client.get(
-        f"/locations/{location_id}/rankings/players-builder-base",
-        params=params,
-    )
-
-
-async def get_capital_rankings(
-    client: CocClient, location_id: int, *, limit: int | None = None
-) -> dict[str, Any]:
-    params = {"limit": limit} if limit is not None else None
-    return await client.get(
-        f"/locations/{location_id}/rankings/capitals", params=params
-    )
+# 都城榜 / 部落基地榜 / 玩家基地榜的封装已删（2026-10-22）：榜单收窄成
+# 「全服的部落榜与玩家榜」，这三类没有消费方，留着只是白烧令牌桶。
 
 
 # --------------------------------------------------------------------------- #

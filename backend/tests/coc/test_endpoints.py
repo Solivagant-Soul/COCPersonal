@@ -14,7 +14,6 @@ from app.coc.client import CocClient
 from app.coc.endpoints import (
     get_builderbaseleague,
     get_builderbaseleagues,
-    get_capital_rankings,
     get_capitalleague,
     get_capitalleague_seasons,
     get_capitalleagues,
@@ -25,7 +24,6 @@ from app.coc.endpoints import (
     get_clan_labels,
     get_clan_members,
     get_clan_rankings,
-    get_clan_rankings_builder_base,
     get_clan_warlog,
     get_clanwarleague_war,
     get_current_goldpass_season,
@@ -36,7 +34,6 @@ from app.coc.endpoints import (
     get_player,
     get_player_labels,
     get_player_rankings,
-    get_player_rankings_builder_base,
     get_warleague,
     get_warleagues,
     search_clans,
@@ -278,36 +275,20 @@ async def test_verify_player_token_uses_post_with_token_body():
         await client.aclose()
 
 
-async def test_capital_rankings_path():
-    calls = []
+async def test_removed_ranking_wrappers_are_gone():
+    """都城榜 / 基地榜的封装已删除（2026-10-22）。
 
-    def handler(request):
-        calls.append(request.url.raw_path.decode())
-        return httpx.Response(200, json={"items": []})
+    留着它们就等于留着一份「随时可能被误用」的入口 —— 一旦有人又把它接回
+    采集，库里就又开始堆没人看的数据。直接断言符号不存在。
+    """
+    import app.coc.endpoints as ep
 
-    client = make_client(handler)
-    try:
-        await get_capital_rankings(client, 32000001)
-        assert calls[0] == "/v1/locations/32000001/rankings/capitals"
-    finally:
-        await client.aclose()
-
-
-async def test_builder_base_rankings_paths():
-    calls = []
-
-    def handler(request):
-        calls.append(request.url.raw_path.decode())
-        return httpx.Response(200, json={"items": []})
-
-    client = make_client(handler)
-    try:
-        await get_clan_rankings_builder_base(client, 32000001)
-        await get_player_rankings_builder_base(client, 32000001)
-        assert calls[0] == "/v1/locations/32000001/rankings/clans-builder-base"
-        assert calls[1] == "/v1/locations/32000001/rankings/players-builder-base"
-    finally:
-        await client.aclose()
+    for name in (
+        "get_capital_rankings",
+        "get_clan_rankings_builder_base",
+        "get_player_rankings_builder_base",
+    ):
+        assert not hasattr(ep, name), f"{name} 应当已删除"
 
 
 async def test_clanwarleague_war_and_capitalraidseasons_paths():

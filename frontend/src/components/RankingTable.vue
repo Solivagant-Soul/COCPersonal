@@ -29,23 +29,13 @@ const METRIC_COLUMNS: Record<RankingKind, Array<{ label: string; prop: string }>
     { label: '成员', prop: 'members' },
     { label: '等级', prop: 'clanLevel' },
   ],
-  capitals: [{ label: '奖杯', prop: 'trophies' }],
-  clans_builder_base: [
-    { label: '积分', prop: 'points' },
-    { label: '成员', prop: 'members' },
-    { label: '等级', prop: 'clanLevel' },
-  ],
   players: [
     { label: '奖杯', prop: 'trophies' },
     { label: '等级', prop: 'expLevel' },
   ],
-  players_builder_base: [
-    { label: '奖杯', prop: 'trophies' },
-    { label: '基地奖杯', prop: 'builderBaseTrophies' },
-  ],
 }
 
-const PLAYER_KINDS: RankingKind[] = ['players', 'players_builder_base']
+const PLAYER_KINDS: RankingKind[] = ['players']
 
 const metricColumns = computed(() => METRIC_COLUMNS[props.kind] ?? [])
 

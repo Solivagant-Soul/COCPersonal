@@ -23,8 +23,12 @@ from app.db.models import Location
 #: 夹具目录：**与夹具上游共用同一个定义**（``app/coc/devfixtures.py``）。
 #: 自己算路径就是当初的坑：仓库相对路径在生产镜像里不存在 → seed 命令在镜像里
 #: ``FileNotFoundError``。夹具是**运行时资产**（夹具上游要读它），必须随包分发。
-#: 夹具 ranking_clans.json 里的地区（China）。
-DEFAULT_LOCATION_ID = 32000001
+#:
+#: 榜单地区是**全服**（32000000）—— 与采集 job 与 API 的默认地区一致
+#: （2026-10-22 收窄）。原先这里是中国 32000001，于是夹具模式下「榜上有数据、
+#: 但榜单页查不出来」—— 页面上地区显示成别的名字，种子数据却在一个
+#: 前端根本不会去查的 scope 里。
+DEFAULT_LOCATION_ID = 32000000
 
 
 def _load(fixtures_dir: Path, name: str) -> dict[str, Any]:

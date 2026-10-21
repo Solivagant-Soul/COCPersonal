@@ -38,28 +38,28 @@ _RANKINGS_WRITE_LOCK_KEY = 0x52414E4B
 
 
 class RankingKind(StrEnum):
-    """6 类榜单。
+    """榜单类型。
 
     用 ``StrEnum`` 而非裸字符串：写进库的是 ``kind.value``，既是字符串又能被
     编辑器补全。``StrEnum`` 的成员本身就是 ``str``，所以 ``Ranking.kind ==
     RankingKind.clans`` 与 ``== "clans"`` 等价，查测试里两种写法都能用。
+
+    **只有 3 类**：两类地区榜（部落 / 玩家）+ 一类赛季榜。
+    都城榜、部落基地榜、玩家基地榜已移除（2026-10-22）—— 需求收窄成
+    "只收集部落和玩家的数据"，而它们没有消费方，留着只是白烧令牌桶。
+    库里的历史行由迁移 0011 清掉。
     """
 
     clans = "clans"
     players = "players"
-    capitals = "capitals"
-    clans_builder_base = "clans_builder_base"
-    players_builder_base = "players_builder_base"
     season_players = "season_players"
 
 
-#: 各 kind 是否带 tag。都城榜只有 name，没有 tag。
+#: 各 kind 是否带 tag。
 _HAS_TAG = frozenset(
     {
         RankingKind.clans,
         RankingKind.players,
-        RankingKind.clans_builder_base,
-        RankingKind.players_builder_base,
         RankingKind.season_players,
     }
 )
