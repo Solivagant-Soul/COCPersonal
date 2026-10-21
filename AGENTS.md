@@ -65,3 +65,11 @@ npm run dev       # :5173，/api 已反代到 :8000
 - **`backend/app/coc/fixtures/` 四份样本是手搓占位**（带 `_source` / `_todo` 自报身份），
   拿到真实 Supercell Token 后要换掉。
 - **排行榜是夹具种子数据**，真实排名需要 Token + 采集器。
+- **2026-10-22 起：排行榜只刷「全服（32000000）的部落榜与玩家榜」**。
+  都城榜 / 部落基地榜 / 玩家基地榜已停采、路由已删（404）。**注意 Global 的
+  `isCountry` 是 false** —— 靠 `is_country` 过滤会把它漏掉。详见
+  `backend/AGENTS.md` 与规格里的裁定条目。
+- **前端是深色主题**（参照 coc.daozishule.cn）：改样式时用 `main.css` 里的
+  主题变量（`--surface-*` / `--text-*` / `--accent-gold`），**别写死颜色**。
+  Element Plus 的深色靠覆盖它的 CSS 变量实现 —— 新加组件时要确认它在深色下
+  正常，别只改 body 背景。
