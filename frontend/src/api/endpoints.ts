@@ -99,6 +99,19 @@ export interface RankingRow {
   defenseWins?: number | null
 }
 
+/**
+ * 榜单里可展示的指标列。**用联合类型而不是裸 string** —— 这样
+ * `row[col.prop]` 的索引是类型安全的，`RankingTable` 里不会因为
+ * 指标名写错而在运行时静默显示空白。
+ */
+export type RankingMetric =
+  | 'points'
+  | 'members'
+  | 'clanLevel'
+  | 'trophies'
+  | 'expLevel'
+  | 'builderBaseTrophies'
+
 export interface RankingsPage {
   items: RankingRow[]
   total: number

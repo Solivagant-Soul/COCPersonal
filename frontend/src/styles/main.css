@@ -1,3 +1,14 @@
+/**
+ * 全局样式与设计变量。
+ *
+ * 深色主题的取值对齐参考站（部落营地 coc.daozishule.cn）的暗色 token：
+ * 页面底 #121214、面板 #1c1c1e、金色主色 #e0a030。
+ *
+ * **Element Plus 的深色靠覆盖它的 CSS 变量实现**（见下方 el-* 段）——
+ * 组件库自带一套浅色变量，只改 body 背景会出现「深色壳 + 浅色表格」的割裂。
+ * 覆盖变量时只改颜色/边框这类**语义**变量，不要去动尺寸变量。
+ */
+
 * {
   box-sizing: border-box;
 }
@@ -9,7 +20,163 @@ body,
   margin: 0;
 }
 
+:root {
+  /* ---- 表面 ---- */
+  --surface-page: #121214;
+  --surface-panel: #1c1c1e;
+  --surface-subtle: #2c2c2e;
+  --surface-input: #2c2c2e;
+  --surface-hover: #2c2c2e;
+
+  /* ---- 边框 ---- */
+  --border-default: #ffffff14;
+  --border-strong: #ffffff24;
+
+  /* ---- 文字 ---- */
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a5;
+  --text-faint: #6e6e73;
+
+  /* ---- 主色（金） ---- */
+  --accent-gold: #e0a030;
+  --accent-gold-bright: #ffb020;
+  --accent-gold-hover: #c48c24;
+  --on-accent: #111111;
+
+  /* ---- 梯级色（榜单徽章） ---- */
+  --tier-s: #ff8a00;
+  --tier-a: #e0a030;
+  --tier-b: #3ad1c0;
+  --tier-c: #3a3a3c;
+
+  /* ---- 涨跌 ---- */
+  --accent-positive: #3ad1c0;
+  --accent-danger: #e2564a;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+
+  --shadow-card: 0 1px 3px #00000038;
+  --shadow-card-hover: 0 6px 16px #140e0647;
+
+  --page-max: 1200px;
+  --page-gutter: 20px;
+
+  /* ---- Element Plus 变量覆盖 ----
+   * 这些是 Element Plus 2.x 认的变量名。改了它们，组件就跟着进深色体系。
+   * 变量清单来自 element-plus 的 dark/css-vars.css（我们手写一份，省一个依赖）。
+   */
+  --el-color-primary: #e0a030;
+  --el-color-primary-light-3: #e6ac4f;
+  --el-color-primary-light-5: #ecc275;
+  --el-color-primary-light-7: #f2d89a;
+  --el-color-primary-light-8: #f6e2b7;
+  --el-color-primary-light-9: #fbefd3;
+  --el-color-primary-dark-2: #b57a26;
+
+  --el-color-success: #3ad1c0;
+  --el-color-success-light-9: #143330;
+  --el-color-warning: #ffb020;
+  --el-color-warning-light-9: #33280f;
+  --el-color-danger: #e2564a;
+  --el-color-danger-light-9: #331917;
+  --el-color-error: #e2564a;
+  --el-color-info: #a0a0a5;
+  --el-color-info-light-9: #262628;
+
+  --el-text-color-primary: #ffffff;
+  --el-text-color-regular: #d4d4d8;
+  --el-text-color-secondary: #a0a0a5;
+  --el-text-color-placeholder: #6e6e73;
+  --el-text-color-disabled: #4a4a4e;
+
+  --el-border-color: #ffffff24;
+  --el-border-color-light: #ffffff1f;
+  --el-border-color-lighter: #ffffff1a;
+  --el-border-color-extra-light: #ffffff14;
+  --el-border-color-dark: #ffffff33;
+  --el-border-color-darker: #ffffff3d;
+
+  --el-fill-color: #2c2c2e;
+  --el-fill-color-light: #262628;
+  --el-fill-color-lighter: #232325;
+  --el-fill-color-extra-light: #1f1f21;
+  --el-fill-color-dark: #343436;
+  --el-fill-color-darker: #3a3a3c;
+  --el-fill-color-blank: #1c1c1e;
+
+  --el-bg-color: #1c1c1e;
+  --el-bg-color-page: #121214;
+  --el-bg-color-overlay: #1c1c1e;
+  --el-mask-color: #0606089e;
+
+  --el-box-shadow: 0 8px 24px #140e0647;
+  --el-box-shadow-light: 0 1px 2px #00000047;
+  --el-box-shadow-lighter: 0 1px 2px #00000038;
+  --el-box-shadow-dark: 0 16px 40px #0000005c;
+
+  --el-disabled-bg-color: #232325;
+  --el-disabled-text-color: #4a4a4e;
+  --el-disabled-border-color: #ffffff14;
+
+  --el-mask-extra-light: #1c1c1e;
+  --el-font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}
+
 body {
-  font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
-  color: #303133;
+  font-family: var(--el-font-family);
+  color: var(--text-primary);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent-gold);
+}
+
+/* 页面容器：所有页面的公共外壳 */
+.page {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 24px var(--page-gutter) 48px;
+}
+
+.page h2 {
+  margin: 0 0 4px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.page__hint {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 卡片：所有面板的统一外壳 */
+.card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+/* 滚动条（WebKit）—— 默认的浅色滚动条在深色背景上很扎眼 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface-page);
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3a3c;
+  border-radius: 5px;
+  border: 2px solid var(--surface-page);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a4e;
 }

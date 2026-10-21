@@ -19,18 +19,19 @@ defineProps<{ items: Array<{ label: string; value: string }> }>()
   margin: 16px 0;
 }
 .stat-grid__cell {
-  background: #fff;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   padding: 12px;
 }
 .stat-grid__label {
-  color: var(--el-text-color-secondary);
+  color: var(--text-secondary);
   font-size: 12px;
 }
 .stat-grid__value {
   font-size: 20px;
   font-weight: 600;
   margin-top: 4px;
+  color: var(--text-primary);
 }
 </style>

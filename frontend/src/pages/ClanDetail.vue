@@ -15,16 +15,18 @@
         description="上游暂时不可用，下面是最近一次成功采集的数据。"
       />
 
-      <div class="clan-head">
-        <span class="clan-head__name">{{ clan.name || clan.tag }}</span>
-        <span class="clan-head__tag">{{ clan.tag }}</span>
+      <div class="detail-card">
+        <div class="clan-head">
+          <span class="clan-head__name">{{ clan.name || clan.tag }}</span>
+          <span class="clan-head__tag">{{ clan.tag }}</span>
+        </div>
+
+        <div class="meta-line">缓存状态：{{ meta?.cache ?? '-' }}</div>
+
+        <p v-if="clan.description" class="clan-desc">{{ clan.description }}</p>
+
+        <StatGrid :items="stats" />
       </div>
-
-      <div class="meta-line">缓存状态：{{ meta?.cache ?? '-' }}</div>
-
-      <p v-if="clan.description" class="clan-desc">{{ clan.description }}</p>
-
-      <StatGrid :items="stats" />
     </template>
   </div>
 </template>
@@ -86,6 +88,13 @@ watch(() => route.params.tag, load, { immediate: true })
 </script>
 
 <style scoped>
+.detail-card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
 .clan-head {
   display: flex;
   align-items: baseline;
@@ -97,14 +106,14 @@ watch(() => route.params.tag, load, { immediate: true })
   font-weight: 600;
 }
 .clan-head__tag {
-  color: var(--el-text-color-secondary);
+  color: var(--text-secondary);
 }
 .meta-line {
-  color: var(--el-text-color-secondary);
+  color: var(--text-secondary);
   font-size: 12px;
   margin-bottom: 8px;
 }
 .clan-desc {
-  color: var(--el-text-color-regular);
+  color: var(--text-regular, #d4d4d8);
 }
 </style>

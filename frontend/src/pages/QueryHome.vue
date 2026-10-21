@@ -1,24 +1,26 @@
 <template>
   <div class="page">
-    <h2>查询</h2>
-    <p class="page__hint">
-      输入玩家或部落标签查询档案。支持全角＃、小写、省略 #。
-    </p>
+    <section class="hero">
+      <h2 class="hero__title">查询</h2>
+      <p class="hero__lead">
+        输入玩家或部落标签查询档案。支持全角＃、小写、省略 #。
+      </p>
 
-    <el-radio-group v-model="kind" class="kind-switch">
-      <el-radio-button value="player">玩家</el-radio-button>
-      <el-radio-button value="clan">部落</el-radio-button>
-    </el-radio-group>
+      <el-radio-group v-model="kind" class="hero__switch">
+        <el-radio-button value="player">玩家</el-radio-button>
+        <el-radio-button value="clan">部落</el-radio-button>
+      </el-radio-group>
 
-    <TagInput :placeholder="placeholder" @submit="go" />
+      <TagInput :placeholder="placeholder" class="hero__input" @submit="go" />
 
-    <SearchHistory />
+      <div class="quick">
+        <span class="quick__label">示例：</span>
+        <el-link type="primary" @click="go('#9QJ8L0')">#9QJ8L0（玩家）</el-link>
+        <el-link type="primary" @click="go('#2PP', 'clan')">#2PP（部落）</el-link>
+      </div>
+    </section>
 
-    <div class="quick">
-      <span class="quick__label">示例：</span>
-      <el-link type="primary" @click="go('#9QJ8L0')">#9QJ8L0（玩家）</el-link>
-      <el-link type="primary" @click="go('#2PP', 'clan')">#2PP（部落）</el-link>
-    </div>
+    <SearchHistory class="history" />
   </div>
 </template>
 
@@ -48,17 +50,45 @@ function go(tag: string, target: 'player' | 'clan' = kind.value) {
 </script>
 
 <style scoped>
-.kind-switch {
+/* ---- 首屏：像参考站的 hero 一样把搜索框放在视觉中心 ---- */
+.hero {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  box-shadow: var(--shadow-card);
+}
+.hero__title {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.hero__lead {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.hero__switch {
   margin-bottom: 12px;
 }
+.hero__input {
+  max-width: 480px;
+}
+
 .quick {
   margin-top: 16px;
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .quick__label {
-  color: var(--el-text-color-secondary);
+  color: var(--text-faint);
   font-size: 13px;
+}
+
+.history {
+  margin-top: 24px;
 }
 </style>

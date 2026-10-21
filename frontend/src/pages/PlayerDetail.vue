@@ -15,20 +15,22 @@
         description="上游暂时不可用，下面是最近一次成功采集的数据。"
       />
 
-      <div class="profile-head">
-        <span class="profile-head__name">{{ profile.name || profile.tag }}</span>
-        <span class="profile-head__tag">{{ profile.tag }}</span>
-      </div>
+      <div class="detail-card">
+        <div class="profile-head">
+          <span class="profile-head__name">{{ profile.name || profile.tag }}</span>
+          <span class="profile-head__tag">{{ profile.tag }}</span>
+        </div>
 
-      <div class="meta-line">缓存状态：{{ meta?.cache ?? '-' }}</div>
+        <div class="meta-line">缓存状态：{{ meta?.cache ?? '-' }}</div>
 
-      <StatGrid :items="stats" />
+        <StatGrid :items="stats" />
 
-      <div v-if="profile.clan" class="clan-ref">
-        所属部落：
-        <router-link :to="{ name: 'clan', params: { tag: profile.clan.tag } }">
-          {{ profile.clan.name || profile.clan.tag }}
-        </router-link>
+        <div v-if="profile.clan" class="clan-ref">
+          所属部落：
+          <router-link :to="{ name: 'clan', params: { tag: profile.clan.tag } }">
+            {{ profile.clan.name || profile.clan.tag }}
+          </router-link>
+        </div>
       </div>
     </template>
   </div>
@@ -89,6 +91,13 @@ watch(() => route.params.tag, load, { immediate: true })
 </script>
 
 <style scoped>
+.detail-card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
 .profile-head {
   display: flex;
   align-items: baseline;
@@ -100,10 +109,10 @@ watch(() => route.params.tag, load, { immediate: true })
   font-weight: 600;
 }
 .profile-head__tag {
-  color: var(--el-text-color-secondary);
+  color: var(--text-secondary);
 }
 .meta-line {
-  color: var(--el-text-color-secondary);
+  color: var(--text-secondary);
   font-size: 12px;
   margin-bottom: 8px;
 }
