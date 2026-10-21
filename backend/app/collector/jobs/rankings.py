@@ -42,40 +42,46 @@ async def collect_rankings(
     笼统记成成功会让"某个地区的榜单缺了一半"永远没人发现。
     """
     now = now or dt.datetime.now(dt.UTC)
-    locations = (
-        await session.execute(select(Location).where(Location.is_country.is_(True)))
+    # **只取 id，不要拿 ORM 实例**：``rollback()`` 会让已加载的实例 expire，
+    # 循环里再读 ``location.id`` 就是一次同步懒加载 —— 异步会话里直接
+    # ``MissingGreenlet``，一个 scope 的数据库错误会把整轮采集带崩
+    # （2026-10-21 线上：死锁 → 回滚 → 下一个 ``location.id`` → job failed）。
+    location_ids = (
+        await session.execute(select(Location.id).where(Location.is_country.is_(True)))
     ).scalars().all()
 
     ok = 0
     failed = 0
     failures: list[str] = []
-    for location in locations:
+    for location_id in location_ids:
         for kind, fetch in _KIND_FETCHERS.items():
             try:
-                payload = await fetch(client, location.id, limit=200)
+                payload = await fetch(client, location_id, limit=200)
             except Exception as exc:  # noqa: BLE001 - 单个 scope 失败不能拖垮整轮
                 failed += 1
-                failures.append(f"{kind}/{location.id}: {exc}")
+                failures.append(f"{kind}/{location_id}: {exc}")
                 logger.warning(
-                    "rankings %s/%s 采集失败: %s", kind, location.id, exc
+                    "rankings %s/%s 采集失败: %s", kind, location_id, exc
                 )
                 continue
             items = (payload or {}).get("items") or []
             try:
                 written = await replace_rankings(
-                    session, kind, location.id, None, None, items, now=now
+                    session, kind, location_id, None, None, items, now=now
                 )
             except Exception as exc:  # noqa: BLE001
                 failed += 1
-                failures.append(f"{kind}/{location.id} 落库失败: {exc}")
-                logger.warning("rankings %s/%s 落库失败: %s", kind, location.id, exc)
-                # 这一条失败不能带着整个事务一起回滚 —— 前面成功的 scope 已经写好了
+                failures.append(f"{kind}/{location_id} 落库失败: {exc}")
+                logger.warning("rankings %s/%s 落库失败: %s", kind, location_id, exc)
+                # 这一条失败不能带着整个事务一起回滚 —— 前面成功的 scope 已经提交了
                 await session.rollback()
                 continue
+            # **每个 scope 单独提交**：事务越短，和另一个采集进程撞车的窗口越小；
+            # 半路失败也不会丢掉已经写好的 scope（顾问锁也随 commit 释放）。
+            await session.commit()
             ok += 1
-            logger.debug("rankings %s/%s 写入 %s 条", kind, location.id, written)
+            logger.debug("rankings %s/%s 写入 %s 条", kind, location_id, written)
 
-    await session.commit()
     # 把失败明细一并带回，run_job 会写进 collector_runs.error。
     # 不带的话线上只剩一个 items_failed=1，得翻日志才知道是哪个地区。
     if failures:

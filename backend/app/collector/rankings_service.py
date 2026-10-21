@@ -17,12 +17,24 @@ import datetime as dt
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.coc.tags import normalize_tag
 from app.db.models import Ranking
+
+
+#: 榜单写入的顾问锁 key（``RANK`` 的 ASCII）。**所有**榜单写入都必须先拿这把锁：
+#: 定时调度与手工 ``collect`` 是两个进程，两个 ``DELETE + INSERT`` 撞在同一张表上
+#: 会互相等锁并最终死锁（2026-10-21 线上真实出现 ``DeadlockDetectedError``）。
+#: 它同时兜住另一个坑：都城榜的 ``tag`` 是 NULL，唯一索引认为 NULL 互不相等，
+#: ``ON CONFLICT`` 拦不住并发写出的重复行。
+#:
+#: 用事务级（``_xact_``）：``COMMIT``/``ROLLBACK`` 自动释放，不需要 finally。
+#: 因此**调用方必须按 scope 提交**，别把整轮采集包在一个长事务里 —— 否则另一个
+#: 采集进程会一直干等这把锁。
+_RANKINGS_WRITE_LOCK_KEY = 0x52414E4B
 
 
 class RankingKind(StrEnum):
@@ -163,8 +175,16 @@ async def replace_rankings(
     是"空列表就 return"，于是榜单永远停在最后一次非空的那版。
 
     不 ``commit``：调用方决定事务边界（采集 job 要把多个 scope 放进同一次运行）。
+    但**调用方每个 scope 都要尽快 commit**：本函数开头拿的顾问锁是事务级的，
+    长事务会把另一个采集进程挡在锁外面。
     """
     now = now or dt.datetime.now(dt.UTC)
+
+    # 先拿写锁再删：并发写 rankings 会死锁（两个进程互等），见 key 的定义。
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:key)"),
+        {"key": _RANKINGS_WRITE_LOCK_KEY},
+    )
 
     # 先删再插，且 DELETE 用同样的 scope 四元组 —— 少一个条件就会误删别的榜单
     await session.execute(

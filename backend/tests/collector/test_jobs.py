@@ -22,6 +22,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.collector import service
+from app.collector.jobs import rankings as rankings_job
 from app.collector.rankings_service import RankingKind
 from app.collector.service import run_job
 from app.coc.errors import CocBusinessError, CocUpstreamError
@@ -354,6 +355,42 @@ async def test_collect_rankings_records_partial_failure(session, settings):
     assert run.error
     # 失败明细要指明是哪个地区，不能只有一个数字
     assert any("32000002" in str(d) for d in run.error["detail"])
+
+
+async def test_collect_rankings_survives_db_error_in_one_scope(session, settings, monkeypatch):
+    """一个 scope 落库报错，不能把整轮采集带崩。
+
+    真实事故（2026-10-21）：两个采集进程并发写 rankings 触发死锁，job 回滚后
+    循环又去读 ``location.id`` —— ORM 实例已被 rollback expire，异步会话里同步
+    懒加载直接 ``MissingGreenlet``，整轮 failed，后面的地区一个都没刷。
+    """
+    await _seed_locations(session, 32000001, 32000002)
+
+    real_replace = rankings_job.replace_rankings
+
+    async def flaky(session_, kind, location_id, league_id, season_id, items, now=None):
+        if location_id == 32000001 and kind == RankingKind.clans:
+            raise RuntimeError("deadlock detected")
+        return await real_replace(
+            session_, kind, location_id, league_id, season_id, items, now=now
+        )
+
+    monkeypatch.setattr(rankings_job, "replace_rankings", flaky)
+    client = FakeClient(
+        routes={"/rankings/": {"items": [{"tag": "#T1", "name": "X", "rank": 1}]}}
+    )
+    status = await run_job("rankings", settings, session, client=client)
+
+    assert status == "partial"
+    run = (
+        await session.execute(select(CollectorRun).order_by(CollectorRun.id.desc()))
+    ).scalars().first()
+    assert run.items_failed == 1
+    assert any("32000001" in str(d) for d in run.error["detail"])
+    # 挂掉的 scope 之外的都照常落库（2 地区 × 5 类 − 1）
+    rows = (await session.execute(select(Ranking))).scalars().all()
+    assert len(rows) == 9
+    assert any(r.location_id == 32000002 for r in rows)
 
 
 async def test_collect_rankings_marks_failed_when_nothing_succeeds(session, settings):

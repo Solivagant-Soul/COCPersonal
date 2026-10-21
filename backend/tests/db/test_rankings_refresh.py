@@ -13,7 +13,7 @@ scope 三元组 `(kind, location_id, league_id, season_id)` 共同确定一份�
 """
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 
 from app.collector.rankings_service import RankingKind, replace_rankings
 from app.db.models import Ranking
@@ -360,6 +360,37 @@ async def test_replace_rankings_stamps_fetched_at_as_aware_utc(session):
         await session.execute(select(Ranking).where(Ranking.location_id == CN))
     ).scalar_one()
     assert row.fetched_at.tzinfo is not None
+
+
+async def test_replace_rankings_takes_write_lock_before_delete(session):
+    """写 rankings 之前必须先拿顾问锁。
+
+    两个采集进程（定时 + 手工 ``collect``）同时 DELETE+INSERT 会互相等锁并
+    死锁（2026-10-21 线上 ``DeadlockDetectedError``）。锁必须在 DELETE **之前**
+    拿到，否则两边都先把删除做完，再互等对方的插入。
+    """
+    from app.db.session import engine
+
+    statements: list[str] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _capture)
+    try:
+        await replace_rankings(session, RankingKind.clans, CN, None, None, [])
+        await session.commit()
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _capture)
+
+    lock_at = next(
+        (i for i, s in enumerate(statements) if "pg_advisory_xact_lock" in s), None
+    )
+    assert lock_at is not None, f"没有拿写锁，实际语句：{statements}"
+    delete_at = next(
+        i for i, s in enumerate(statements) if s.lstrip().upper().startswith("DELETE")
+    )
+    assert lock_at < delete_at
 
 
 # --------------------------------------------------------------------------- #
