@@ -399,6 +399,14 @@ docker compose exec api python -m app.cli collect --help
 同样的部分失败记账、同样的令牌桶。输出 `采集 job rankings -> success` 即完成；
 `partial` 表示部分地区失败（明细看 `collector_runs.error`）。
 
+各 job 的「正常长相」（2026-10-21 真实 Token 实测，拿来对照）：
+
+- `leagues` → `success (ok=88 failed=0)`（联赛、都城联赛、建筑大师联赛、联赛层级合并计数）。
+- `seasons` → `success (ok=6 failed=0)`：赛季清单翻到底（3 次请求）后**只留最近 6 个**，
+  并抓当前赛季的 200 名。核对 `SELECT count(*) FROM seasons WHERE league_id=29000022;` = 6。
+- `rankings` → 常见 `partial`：1275 个 scope 里偶尔 1–2 个上游 `525`（代理到源站的 TLS
+  握手失败）。**这不是 bug**，下一轮会自愈；只有大面积 `failed` 才需要查 Token / 白名单。
+
 ### 备份与恢复
 
 脚本：`backend/deploy/backup.sh`（数据库全量 + 媒体目录 + 自动清理 14 天前的旧备份）。
