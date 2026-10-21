@@ -4,10 +4,16 @@
 ``Season`` 行 —— 否则每次触发都要扫遍几十年的数据，直接打爆令牌桶。这两条都是
 硬约束，不是优化。
 
-联赛 id 不是 warleague 的 ``48000000``：``/leagues/{leagueId}/seasons`` 只接受
-**联赛 tier** 的 id，传 warleague id 会被上游以
-``400 Unknown value for parameter leagueId`` 拒绝（2026-10-21 线上实测，
-全 23 个 warleague 逐个 400，job 却因为没记账而报 success）。
+联赛 id 是 ``/leagues`` 里的 Legend League（``29000022``）。另外两套 id 都会 400
+（2026-10-21 线上逐个实测）：
+
+- warleague 的 ``48000000``（``/warleagues`` 列表）→ "Unknown value for parameter leagueId"；
+- ``/leaguetiers`` 的 ``105000xxx``（Legend I/II/III）→ 同样 Unknown leagueId；
+- 同属 ``/leagues`` 的非 Legend 项（如 ``29000020``）→ "Seasons are available only
+  for legendary league"。
+
+赛季清单**由旧到新**分页返回（2015-07 起，默认一页 10 条），所以当前赛季要翻到
+最后一页，不能取第一条。
 """
 
 from __future__ import annotations
@@ -25,11 +31,18 @@ from app.db.models import Season
 
 logger = logging.getLogger("coc.collector.seasons")
 
-#: Legend League 的**联赛 tier** id。官方只对 Legend League 提供赛季榜
-#: （``/leagues/{id}/seasons``），且这个接口只认联赛 tier 的 id —— 传
-#: warleague 的 ``48000000`` 一律 400。该值取自社区实现 clashofclans.js 的
-#: ``LEGEND_LEAGUE_ID``（生产在用），不是我们自己猜的。
-LEGEND_LEAGUE_ID = 105000036
+#: Legend League 在 ``/leagues`` 里的 id。赛季榜**只对 Legend League 开放**，且只认
+#: ``/leagues`` 这套 id（``290000xx``）：传 ``/leaguetiers`` 的 ``105000xxx``
+#: （Legend I/II/III）会 400 "Unknown value for parameter leagueId"，传 warleague 的
+#: ``48000000`` 同样 400 —— 三种都在 2026-10-21 线上实测过。
+LEGEND_LEAGUE_ID = 29000022
+
+#: 赛季清单一页最多 50 条；官方**由旧到新**返回（2015-07 起），所以拿当前赛季要翻页。
+_SEASON_PAGE_LIMIT = 50
+
+#: 翻页上限（50 × 40 = 2000 个赛季，2015 至今约 135 个）。
+#: 必须有上限：游标万一不推进，没有上限就是死循环。
+_MAX_SEASON_PAGES = 40
 
 #: 一次抓多少名次。官方默认只给 10 条、``limit`` 上限 50（更多要翻页，一期不做），
 #: 所以取满 50 而不是官方默认值 —— 默认值会让赛季榜静默只剩前 10 名。
@@ -47,6 +60,36 @@ def _parse_time(value) -> dt.datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
 
 
+async def _fetch_season_items(client: CocClient) -> list[dict]:
+    """翻完 Legend League 的赛季清单（官方由旧到新分页返回）。
+
+    取不到 ``items`` 就抛 —— 官方出错时返回 ``{"error": ...}`` 这种 dict，
+    静默当"没有赛季"会让 Season 表永不更新而 job 报 success。
+    """
+    items: list[dict] = []
+    seen: set[str] = set()
+    after: str | None = None
+    for _ in range(_MAX_SEASON_PAGES):
+        payload = await coc.get_league_seasons(
+            client, LEGEND_LEAGUE_ID, limit=_SEASON_PAGE_LIMIT, after=after
+        )
+        page = (payload or {}).get("items")
+        if page is None:
+            raise ValueError(
+                f"leagues/{LEGEND_LEAGUE_ID}/seasons 响应缺少 items 字段: "
+                f"{str(payload)[:200]}"
+            )
+        for item in page:
+            season_id = item.get("id")
+            if season_id and str(season_id) not in seen:
+                seen.add(str(season_id))
+                items.append(item)
+        after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
+        if not after:
+            break
+    return items
+
+
 async def collect_seasons(
     client: CocClient, session: AsyncSession, now: dt.datetime | None = None
 ) -> dict[str, int]:
@@ -54,28 +97,16 @@ async def collect_seasons(
     failures: list[str] = []
 
     try:
-        payload = await coc.get_league_seasons(client, LEGEND_LEAGUE_ID)
+        season_items = await _fetch_season_items(client)
     except Exception as exc:  # noqa: BLE001
-        # 上游 400（例如把 warleague id 当联赛 id 传）必须记账成失败。
+        # 上游 400（例如拿 tier/warleague 的 id 当联赛 id 传）必须记账成失败。
         failures.append(f"leagues/{LEGEND_LEAGUE_ID}/seasons: {exc}")
-        logger.warning("%s", failures[-1])
-        await session.commit()
-        return _result(0, 0, failures)
-    # 响应形状是 {"items": [...]}（官方；**不是** {"seasons": [...]}）。
-    # **不能写成 or []** —— 官方出错时返回 {"error": ...} 这种 dict，
-    # 取不到 items 会静默变成"这轮没有赛季"，于是 Season 表不更新而 job 报 success。
-    # 取不到就必须当失败。
-    season_rows = (payload or {}).get("items")
-    if season_rows is None:
-        failures.append(
-            f"leagues/{LEGEND_LEAGUE_ID}/seasons 响应缺少 items 字段: {str(payload)[:200]}"
-        )
         logger.warning("%s", failures[-1])
         await session.commit()
         return _result(0, 0, failures)
 
     rows: list[Season] = []
-    for item in season_rows:
+    for item in season_items:
         season_id = item.get("id")
         if not season_id:
             continue
@@ -92,10 +123,10 @@ async def collect_seasons(
     await session.commit()
 
     players_ok = 0
-    # 官方按时间倒序返回，第一个就是当前赛季 —— 这是"只为当前赛季抓排名"
-    # 得以成立的前提，别改成排序后取最新，官方偶尔会返回过期的第一条。
+    # 当前赛季 = id 最大（形如 ``YYYY-MM``，字典序即时间序）。**不要依赖接口顺序**：
+    # 官方是由旧到新分页，取第一条会拿到 2015-07。
     if rows:
-        season_id = rows[0].id
+        season_id = max(rows, key=lambda row: row.id).id
         try:
             rankings = await coc.get_league_season_players(
                 client, LEGEND_LEAGUE_ID, season_id, limit=_SEASON_PLAYER_LIMIT

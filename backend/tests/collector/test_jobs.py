@@ -228,20 +228,17 @@ async def test_collect_leagues_upserts_all_three_kinds(session, settings):
 
 
 async def test_collect_seasons_writes_season_rows_and_current_season_rankings(session, settings):
-    # 联赛 id 必须是**联赛 tier** 的 Legend League（105000036）。拿 warleague 的
-    # 48000000 来查，上游一律 400 "Unknown value for parameter leagueId"
-    # —— 2026-10-21 线上 23 个 warleague 逐个 400 过。
+    # 联赛 id 必须是 ``/leagues`` 里的 Legend League（29000022）。另两套 id 都会被
+    # 上游 400：warleague 的 48000000、``/leaguetiers`` 的 105000036（2026-10-21 实测）。
     client = FakeClient(
         routes={
-            # 赛季名次（items）与赛季清单（items）路径只差一段，必须按完整路径配
-            "/leagues/105000036/seasons/2026-09": {
+            # 赛季名次与赛季清单路径只差一段，必须按完整路径配
+            "/leagues/29000022/seasons/2026-09": {
                 "items": [{"tag": "#P1", "name": "P1", "rank": 1}]
             },
-            "/leagues/105000036/seasons": {
-                "items": [
-                    {"id": "2026-09", "name": "Sep 2026",
-                     "startTime": "2026-09-01T08:00:00.000Z"}
-                ]
+            "/leagues/29000022/seasons": {
+                "items": [{"id": "2026-09"}],
+                "paging": {"cursors": {}},
             },
         }
     )
@@ -249,9 +246,10 @@ async def test_collect_seasons_writes_season_rows_and_current_season_rankings(se
 
     seasons = (await session.execute(select(Season))).scalars().all()
     assert len(seasons) == 1
-    assert seasons[0].league_id == 105000036
+    assert seasons[0].league_id == 29000022
     assert seasons[0].id == "2026-09"
-    assert seasons[0].start_time is not None and seasons[0].start_time.tzinfo is not None
+    # 官方赛季元素只有 id，没有 name —— 用 id 兜底，不能写成 NULL
+    assert seasons[0].name == "2026-09"
 
     ranks = (
         await session.execute(
@@ -260,39 +258,47 @@ async def test_collect_seasons_writes_season_rows_and_current_season_rankings(se
     ).scalars().all()
     assert len(ranks) == 1
     assert ranks[0].tag == "#P1"
-    assert ranks[0].league_id == 105000036
+    assert ranks[0].league_id == 29000022
     assert ranks[0].season_id == "2026-09"
 
-    # warleague 的 id 绝不能出现在赛季接口里（上线后 400 的直接原因）
+    # warleague / leaguetier 的 id 绝不能出现在赛季接口里（上线后 400 的直接原因）
     assert all("/warleagues" not in path for _, path, _ in client.calls)
+    assert all("105000036" not in path for _, path, _ in client.calls)
     # 官方默认只回 10 条，采集必须显式要满一页
+    list_calls = [c for c in client.calls if c[1] == "/leagues/29000022/seasons"]
+    assert list_calls[0][2] == {"limit": 50}
     player_calls = [c for c in client.calls if c[1].endswith("/seasons/2026-09")]
     assert player_calls and player_calls[0][2] == {"limit": 50}
 
 
-async def test_collect_seasons_does_not_fetch_rankings_for_historical_seasons(session, settings):
-    """历史赛季只存 Season 行，不抓排名。
+async def test_collect_seasons_pages_to_the_latest_season(session, settings):
+    """赛季清单**由旧到新**分页，当前赛季在最后一页。
 
-    否则每次触发都会扫遍几十年的联赛数据，直接打爆令牌桶。
+    只取第一页的话会拿到 2015-07，赛季榜就永远刷在十年前 —— 而且不会报错。
     """
+
+    def seasons(path, params):
+        if params.get("after") == "cursor-1":
+            return {"items": [{"id": "2026-10"}], "paging": {"cursors": {}}}
+        return {
+            "items": [{"id": "2015-07"}, {"id": "2015-08"}],
+            "paging": {"cursors": {"after": "cursor-1"}},
+        }
+
     client = FakeClient(
         routes={
-            "/leagues/105000036/seasons/2026-09": {"items": []},
-            "/leagues/105000036/seasons": {
-                "items": [
-                    {"id": "2026-09", "name": "Sep", "startTime": "2026-09-01T00:00:00Z"},
-                    {"id": "2026-08", "name": "Aug", "startTime": "2026-08-01T00:00:00Z"},
-                    {"id": "2026-07", "name": "Jul", "startTime": "2026-07-01T00:00:00Z"},
-                ]
-            },
+            "/leagues/29000022/seasons/2026-10": {"items": [{"tag": "#P9", "name": "P9", "rank": 1}]},
+            "/leagues/29000022/seasons": seasons,
         }
     )
     await run_job("seasons", settings, session, client=client)
 
-    assert len((await session.execute(select(Season))).scalars().all()) == 3
-    # 名次只抓当前赛季（列表第一条），历史赛季绝不碰
-    player_calls = [c for c in client.calls if c[1].count("/") == 4 and "seasons" in c[1]]
-    assert len(player_calls) == 1, f"只应对当前赛季抓一次排名，实际：{player_calls}"
+    rows = (await session.execute(select(Season))).scalars().all()
+    assert len(rows) == 3
+    player_calls = [c for c in client.calls if c[1].endswith("/seasons/2026-10")]
+    assert len(player_calls) == 1, f"只有当前赛季该抓排名，实际：{player_calls}"
+    list_calls = [c for c in client.calls if c[1] == "/leagues/29000022/seasons"]
+    assert len(list_calls) == 2, f"应该翻两页，实际：{list_calls}"
 
 
 async def test_collect_seasons_records_failure_when_upstream_rejects_league_id(
@@ -305,7 +311,7 @@ async def test_collect_seasons_records_failure_when_upstream_rejects_league_id(
     """
     client = FakeClient(
         routes={
-            "/leagues/105000036/seasons": CocBusinessError(
+            "/leagues/29000022/seasons": CocBusinessError(
                 "Unknown value for parameter leagueId"
             )
         }
@@ -322,7 +328,7 @@ async def test_collect_seasons_records_failure_when_upstream_rejects_league_id(
     assert run.error and "leagueId" in str(run.error)
     # 失败明细要指名是哪个 scope，别只剩一个数字
     assert any(
-        "leagues/105000036/seasons" in str(d) for d in run.error.get("detail") or []
+        "leagues/29000022/seasons" in str(d) for d in run.error.get("detail") or []
     )
 
 

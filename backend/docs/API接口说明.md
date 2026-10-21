@@ -388,18 +388,19 @@ curl -H "Authorization: Bearer eyJ0eXAiOiJKV1Qi..." \
 | 16 | GET | `/capitalleagues/{leagueId}` | 获取单个都城联赛 |
 | 17 | GET | `/builderbaseleagues` | 获取建筑大师基地联赛列表 |
 | 18 | GET | `/builderbaseleagues/{leagueId}` | 获取单个建筑大师基地联赛 |
-| 19 | GET | `/leagues/{leagueId}/seasons` | 获取联赛赛季列表 |
-| 20 | GET | `/leagues/{leagueId}/seasons/{seasonId}` | 获取赛季玩家排名 |
-| 21 | GET | `/locations` | 获取地区列表 |
-| 22 | GET | `/locations/{locationId}` | 获取单个地区 |
-| 23 | GET | `/locations/{locationId}/rankings/clans` | 部落排行榜 |
-| 24 | GET | `/locations/{locationId}/rankings/players` | 玩家排行榜 |
-| 25 | GET | `/locations/{locationId}/rankings/clans-builder-base` | 建筑大师基地部落排行榜 |
-| 26 | GET | `/locations/{locationId}/rankings/players-builder-base` | 建筑大师基地玩家排行榜 |
-| 27 | GET | `/locations/{locationId}/rankings/capitals` | 都城排行榜 |
-| 28 | GET | `/labels/clans` | 获取部落标签列表 |
-| 29 | GET | `/labels/players` | 获取玩家标签列表 |
-| 30 | GET | `/goldpass/seasons/current` | 获取当前黄金令牌赛季 |
+| 19 | GET | `/leagues` | 获取联赛列表（赛季接口的 id 来源） |
+| 20 | GET | `/leagues/{leagueId}/seasons` | 获取联赛赛季列表 |
+| 21 | GET | `/leagues/{leagueId}/seasons/{seasonId}` | 获取赛季玩家排名 |
+| 22 | GET | `/locations` | 获取地区列表 |
+| 23 | GET | `/locations/{locationId}` | 获取单个地区 |
+| 24 | GET | `/locations/{locationId}/rankings/clans` | 部落排行榜 |
+| 25 | GET | `/locations/{locationId}/rankings/players` | 玩家排行榜 |
+| 26 | GET | `/locations/{locationId}/rankings/clans-builder-base` | 建筑大师基地部落排行榜 |
+| 27 | GET | `/locations/{locationId}/rankings/players-builder-base` | 建筑大师基地玩家排行榜 |
+| 28 | GET | `/locations/{locationId}/rankings/capitals` | 都城排行榜 |
+| 29 | GET | `/labels/clans` | 获取部落标签列表 |
+| 30 | GET | `/labels/players` | 获取玩家标签列表 |
+| 31 | GET | `/goldpass/seasons/current` | 获取当前黄金令牌赛季 |
 
 ---
 
@@ -519,7 +520,7 @@ GET /v1/clans/{clanTag}
       "role": "leader",
       "expLevel": 200,
       "townHallLevel": 15,
-      "leagueTier": { "id": 29000020, "name": "Legend League", "iconUrls": { "small": "...", "medium": "..." } },
+      "leagueTier": { "id": 105000036, "name": "Legend I", "iconUrls": { "small": "...", "medium": "..." } },
       "builderBaseLeague": { "id": 44000000, "name": "..." },
       "trophies": 5200,
       "builderBaseTrophies": 3000,
@@ -580,7 +581,7 @@ GET /v1/clans/{clanTag}/members
       "role": "coLeader",
       "expLevel": 180,
       "townHallLevel": 14,
-      "leagueTier": { "id": 29000015, "name": "Titan League I", "iconUrls": { "small": "...", "medium": "..." } },
+      "leagueTier": { "id": 105000025, "name": "Titan League 25", "iconUrls": { "small": "...", "medium": "..." } },
       "builderBaseLeague": { "id": 44000000, "name": "..." },
       "trophies": 4800,
       "builderBaseTrophies": 2800,
@@ -935,8 +936,8 @@ GET /v1/players/{playerTag}
     "badgeUrls": { "small": "...", "medium": "...", "large": "..." }
   },
   "leagueTier": {
-    "id": 29000020,
-    "name": "Legend League",
+    "id": 105000036,
+    "name": "Legend I",
     "iconUrls": { "small": "...", "large": "..." }
   },
   "builderBaseLeague": { "id": 44000000, "name": "..." },
@@ -1039,6 +1040,11 @@ Content-Type: application/json
 
 #### 9.4.1 获取联赛层级列表
 
+> **不要和 `/leagues` 混用**：本接口返回的是**联赛层级 tier**，id 为 `105000xxx`
+> （`105000034` Legend III / `105000035` Legend II / `105000036` Legend I）；
+> 而 `/leagues` 返回的是另一套 id `290000xx`（Legend League = `29000022`）。
+> 赛季接口只认后者（见 9.4.9）。
+
 ```http
 GET /v1/leaguetiers
 ```
@@ -1049,8 +1055,8 @@ GET /v1/leaguetiers
 {
   "items": [
     {
-      "id": 29000020,
-      "name": "Legend League",
+      "id": 105000036,
+      "name": "Legend I",
       "iconUrls": { "small": "...", "large": "..." }
     }
   ],
@@ -1070,8 +1076,8 @@ GET /v1/leaguetiers/{leagueId}
 
 ```json
 {
-  "id": 29000020,
-  "name": "Legend League",
+  "id": 105000036,
+  "name": "Legend I",
   "iconUrls": { "small": "...", "large": "..." }
 }
 ```
@@ -1159,11 +1165,23 @@ GET /v1/builderbaseleagues/{leagueId}
 GET /v1/leagues/{leagueId}/seasons
 ```
 
+> **`leagueId` 必须来自 `/leagues`（`290000xx`），而且只有 Legend League（`29000022`）有赛季。**
+> 实测（2026-10-21）：
+>
+> - `/warleagues` 的 `48000000` → `400 Unknown value for parameter leagueId`
+> - `/leaguetiers` 的 `105000036` → 同样 `400 Unknown value for parameter leagueId`
+> - `/leagues` 的 `29000020` / `29000021` → `400 Seasons are available only for legendary league`
+> - `/leagues` 的 `29000022` → `200`
+>
+> 返回的 `items` **由旧到新**（从 `2015-07` 开始）分页给出，拿当前赛季必须顺着
+> `paging.cursors.after` 翻到最后一页，不能取 `items[0]`。赛季元素只有 `id`，
+> 没有 `name` / `startTime`。
+
 **查询参数**：`limit`（默认 `10`，`1`–`50`）、`after`、`before`
 
 ```json
 {
-  "items": [ { "id": "2024-01" }, { "id": "2023-12" } ],
+  "items": [ { "id": "2015-07" }, { "id": "2015-08" } ],
   "paging": { "cursors": { "after": "...", "before": "..." } }
 }
 ```
@@ -1289,7 +1307,7 @@ GET /v1/locations/{locationId}/rankings/players
       "rank": 1,
       "previousRank": 3,
       "clan": { "tag": "#2PP", "name": "示例部落", "badgeUrls": { "small": "...", "medium": "...", "large": "..." } },
-      "leagueTier": { "id": 29000020, "name": "Legend League", "iconUrls": { "small": "...", "large": "..." } }
+      "leagueTier": { "id": 105000036, "name": "Legend I", "iconUrls": { "small": "...", "large": "..." } }
     }
   ],
   "paging": { "cursors": { "after": "...", "before": "..." } }
@@ -1552,7 +1570,8 @@ GET /v1/goldpass/seasons/current
 | --- | --- |
 | 地区 - 全球 | `32000000` |
 | 地区 - 国家 / 区域 | `32000001` 起 |
-| 联赛层级 League Tier | `29000000` 起 |
+| 联赛（`/leagues`，赛季 id 来源） | `29000000` 起；Legend League = `29000022` |
+| 联赛层级（`/leaguetiers`） | `105000000` 起；Legend I/II/III = `105000034`–`105000036` |
 | 建筑大师基地联赛 | `44000000` 起 |
 | 部落对战联赛 War League | `48000000` 起 |
 | 部落 / 玩家标签 | `56000000` 起 |
@@ -1803,7 +1822,7 @@ console.log(clan.name);
   "items": [{
     "leagueSeasonId": 202401,
     "leagueTrophies": 5200,
-    "leagueTierId": 29000020,
+    "leagueTierId": 105000036,
     "placement": 1,
     "attackWins": 8, "attackLosses": 2, "attackStars": 22,
     "defenseWins": 5, "defenseLosses": 3, "defenseStars": 14,

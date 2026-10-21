@@ -227,6 +227,22 @@ async def test_league_seasons_path():
         await client.aclose()
 
 
+async def test_get_league_seasons_passes_limit_and_cursor():
+    """赛季清单由旧到新分页，翻页要带 ``after`` 游标。"""
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"items": []})
+
+    client = make_client(handler)
+    try:
+        await get_league_seasons(client, 29000022, limit=50, after="abc")
+        assert calls[0] == "/v1/leagues/29000022/seasons?limit=50&after=abc"
+    finally:
+        await client.aclose()
+
+
 async def test_clan_labels_and_player_labels_paths():
     calls = []
 

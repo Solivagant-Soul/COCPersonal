@@ -148,8 +148,33 @@ async def get_builderbaseleague(client: CocClient, league_id: int) -> dict[str, 
     return await client.get(f"/builderbaseleagues/{league_id}")
 
 
-async def get_league_seasons(client: CocClient, league_id: int) -> dict[str, Any]:
-    return await client.get(f"/leagues/{league_id}/seasons")
+async def get_leagues(client: CocClient, limit: int | None = None) -> dict[str, Any]:
+    """联赛列表（``/leagues``，id 为 ``290000xx``）。
+
+    **不要和 ``/leaguetiers`` 混用**：tier 的 id 是 ``105000xxx``（Legend I/II/III），
+    而 ``/leagues/{id}/seasons`` 只认这里的 id。
+    """
+    params = {"limit": limit} if limit is not None else None
+    return await client.get("/leagues", params)
+
+
+async def get_league_seasons(
+    client: CocClient,
+    league_id: int,
+    limit: int | None = None,
+    after: str | None = None,
+) -> dict[str, Any]:
+    """联赛赛季清单。
+
+    官方**由旧到新**分页返回（2015-07 起），``limit`` 上限 50；要当前赛季
+    必须顺着 ``paging.cursors.after`` 翻到最后一页。
+    """
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if after is not None:
+        params["after"] = after
+    return await client.get(f"/leagues/{league_id}/seasons", params or None)
 
 
 async def get_capitalleague_seasons(
