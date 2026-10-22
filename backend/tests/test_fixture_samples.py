@@ -6,7 +6,7 @@
 2. 必须带 ``_source`` 标注，这样将来拿到 Token 的人一眼看出哪些是placeholder；
 3. 字段名与官方 API 文档一致，供 Task 7 的 mapper 容错测试直接使用。
 
-真实 Token 到位后，把四个文件整体替换为真实响应，然后删掉本文件里的
+真实 Token 到位后，把五个文件整体替换为真实响应，然后删掉本文件里的
 ``test_*_are_marked_placeholders``（那时它们不再是占位）。
 
 **夹具住在包内**（``app/coc/fixtures/``）不是 ``tests/`` 下：无 Token 时夹具上游
@@ -24,6 +24,7 @@ SAMPLE_FILES = [
     "player_profile.json",
     "locations.json",
     "ranking_clans.json",
+    "ranking_players.json",
 ]
 
 

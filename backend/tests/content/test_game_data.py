@@ -447,3 +447,17 @@ def _sync_return(value):
         return value
 
     return _call
+
+def test_seed_dev_rankings_defaults_to_global_location():
+    """``--location`` 不传时必须落到**全服**（32000000），不是中国。
+
+    写死 32000001 的后果很隐蔽：命令照样打印「已灌入」，但数据进了前端
+    根本不会去查的 scope —— 排行榜页看着是空的，人会去怀疑采集或接口。
+    """
+    from app.cli import build_parser
+    from app.devseed import DEFAULT_LOCATION_ID
+
+    args = build_parser().parse_args(["seed-dev-rankings"])
+    # None 表示"交给 devseed 的默认值"，默认值只维护在一处
+    assert args.location is None
+    assert DEFAULT_LOCATION_ID == 32000000

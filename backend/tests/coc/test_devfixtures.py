@@ -34,10 +34,44 @@ async def test_transport_unknown_path_is_404_notfound():
 async def test_transport_maps_rankings_path():
     t = FixtureTransport()
     resp = await t.handle_async_request(
-        httpx.Request("GET", "https://x/v1/rankings/clans?locationId=32000001")
+        httpx.Request("GET", "https://x/v1/rankings/clans?locationId=32000000")
     )
     assert resp.status_code == 200
     assert isinstance(resp.json()["items"], list)
+
+
+async def test_transport_maps_player_rankings_path():
+    """玩家榜也要有夹具。
+
+    榜单现在只有部落/玩家两类，缺一个就是「无 Token 时玩家页永远空着」，
+    而采集 job 每 6 小时都会对着 404 记一次失败。
+    """
+    t = FixtureTransport()
+    resp = await t.handle_async_request(
+        httpx.Request(
+            "GET", "https://x/v1/locations/32000000/rankings/players?limit=200"
+        )
+    )
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert items
+    assert all("tag" in i and "rank" in i for i in items)
+
+
+async def test_player_rankings_path_is_not_swallowed_by_player_detail_route():
+    """``/rankings/players`` 里的 ``/players/`` 不能让它落到玩家详情夹具。
+
+    这是路由顺序的经典坑：玩家详情那条约 ``"/players/" in path``，而
+    ``/locations/32000000/rankings/players`` 也含这个子串 —— 判反了就会把
+    一整张榜返回成一个玩家的档案。
+    """
+    t = FixtureTransport()
+    resp = await t.handle_async_request(
+        httpx.Request("GET", "https://x/v1/locations/32000000/rankings/players")
+    )
+    body = resp.json()
+    assert "items" in body, f"落到了玩家详情夹具：{list(body)[:5]}"
+    assert "name" not in body or "items" in body
 
 
 async def test_transport_maps_clan_and_locations_paths():

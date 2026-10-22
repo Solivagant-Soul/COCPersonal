@@ -72,11 +72,29 @@ async def seed_dev_rankings(
         )
     locations_written = await upsert_all(session, Location, location_rows, "id")
 
-    rankings_payload = _load(base, "ranking_clans.json")
-    items = rankings_payload.get("items") or []
-    rankings_written = await replace_rankings(
-        session, RankingKind.clans, location_id, None, None, items
+    # 两类榜都灌 —— 前端现在只有部落/玩家两个页签，只灌部落会让玩家页空着，
+    # 看起来像"玩家榜坏了"。
+    clans_written = await replace_rankings(
+        session,
+        RankingKind.clans,
+        location_id,
+        None,
+        None,
+        _load(base, "ranking_clans.json").get("items") or [],
+    )
+    players_written = await replace_rankings(
+        session,
+        RankingKind.players,
+        location_id,
+        None,
+        None,
+        _load(base, "ranking_players.json").get("items") or [],
     )
 
     await session.commit()
-    return {"locations": locations_written, "rankings": rankings_written}
+    return {
+        "locations": locations_written,
+        "rankings": clans_written + players_written,
+        "clans": clans_written,
+        "players": players_written,
+    }

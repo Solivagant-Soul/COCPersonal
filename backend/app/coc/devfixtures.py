@@ -64,11 +64,14 @@ class FixtureTransport(httpx.AsyncBaseTransport):
         return httpx.Response(status, json=payload, request=request)
 
     def _route(self, path: str) -> tuple[dict[str, Any], int]:
-        # 顺序要紧：/clans/search 也含 "/clans/"，必须先判它。
+        # 顺序要紧：/clans/search 也含 "/clans/"，必须先判它；
+        # /rankings/players 也含 "/players/"，必须在玩家详情之前判。
         if "/clans/search" in path:
             return _search_payload(), 200
         if "/rankings/clans" in path:
             return _load("ranking_clans.json"), 200
+        if "/rankings/players" in path:
+            return _load("ranking_players.json"), 200
         if "/players/" in path:
             return _load("player_profile.json"), 200
         if "/clans/" in path:

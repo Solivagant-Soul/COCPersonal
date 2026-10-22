@@ -1,0 +1,44 @@
+{
+  "_source": "HAND-BUILT PLACEHOLDER — 无真实 Token，按官方文档字段构造。",
+  "_todo": "拿到 Supercell API Token 后用真实响应替换，并删除 _source/_todo 两个键。",
+  "_note": "覆盖 previousRank 大于/小于 rank 两种形态：前者表示名次上升，后者表示掉名次。",
+  "items": [
+    {
+      "tag": "#8QU8J9J",
+      "name": "Sinai",
+      "rank": 1,
+      "previousRank": 3,
+      "expLevel": 300,
+      "trophies": 6800,
+      "attackWins": 312,
+      "defenseWins": 87,
+      "clan": {"tag": "#2PP", "name": "Reddit Zulu"},
+      "league": {"id": 29000022, "name": "Legend League"}
+    },
+    {
+      "tag": "#9QJ8L0",
+      "name": "Nova China",
+      "rank": 2,
+      "previousRank": 2,
+      "expLevel": 278,
+      "trophies": 6720,
+      "attackWins": 265,
+      "defenseWins": 74,
+      "clan": {"tag": "#9GP0CV9", "name": "Nova China"},
+      "league": {"id": 29000022, "name": "Legend League"}
+    },
+    {
+      "tag": "#2Y0GJ8V9",
+      "name": "Rising Star",
+      "rank": 3,
+      "previousRank": 0,
+      "expLevel": 265,
+      "trophies": 6655,
+      "attackWins": 240,
+      "defenseWins": 61,
+      "clan": {"tag": "#2PP", "name": "Reddit Zulu"},
+      "league": {"id": 29000022, "name": "Legend League"}
+    }
+  ],
+  "paging": {"cursors": {}}
+}

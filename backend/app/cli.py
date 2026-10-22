@@ -53,8 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
     seed.add_argument(
         "--location",
         type=int,
-        default=32000001,
-        help="地区 ID（默认 32000001 = China）",
+        # 与 ``app.devseed.DEFAULT_LOCATION_ID`` 保持一致：榜单现在只看全服。
+        # 默认写死成 China 会让夹具数据灌进一个前端根本不会去查的 scope，
+        # 表现为「命令成功、排行榜页却空着」。
+        default=None,
+        help="地区 ID（默认 32000000 = 全服 Global）",
     )
 
     col = sub.add_parser(
@@ -137,8 +140,12 @@ async def _import_with_own_session(rows) -> int:
         await session.close()
 
 
-async def cmd_seed_dev_rankings(location: int = 32000001) -> int:
-    """灌入地区维表与部落榜样本，返回写入的榜单条数。"""
+async def cmd_seed_dev_rankings(location: int | None = None) -> int:
+    """灌入地区维表与部落/玩家榜样本，返回写入的榜单条数。
+
+    ``location`` 传 None 时用 ``app.devseed.DEFAULT_LOCATION_ID``（全服）——
+    默认值只维护在那一处，避免 CLI 与 devseed 各自写死一个地区。
+    """
     from app.db.session import async_sessionmaker
     from app.devseed import seed_dev_rankings
 
