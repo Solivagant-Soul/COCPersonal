@@ -6,6 +6,10 @@
 
 **只刷全服（Global, 32000000）× 2 类榜（部落 / 玩家）**。
 
+**上游路径参数不一样**：部落榜用数字 ``32000000``，玩家榜必须用虚拟地区
+``global``（数字 ID 会 404 ``Rankings not found for location``）。
+见 ``_UPSTREAM_LOCATION``；落库的 scope 两边都是 ``32000000``。
+
 - 地区收成 1 个：原先刷所有 ``is_country = true`` 的国家（几十个），逐级地区
   还有几百个。需求收窄成"只看全服榜单"，于是每个 scope 的请求量与库里的
   存量都按比例降下来。
@@ -41,6 +45,18 @@ _KIND_FETCHERS = {
     RankingKind.players: coc.get_player_rankings,
 }
 
+#: 每类榜在**上游**用的地区标识（落库的 scope 仍是全服 ``32000000``）。
+#:
+#: 两者**故意不同**：部落榜用数字 ``32000000`` 正常（实测 200），玩家榜用同一个
+#: 数字会 404 ``Rankings not found for location`` —— 总榜的玩家榜挂在虚拟地区
+#: ``global`` 下（2026-10-23 线上真实采集失败，coc.py 的
+#: ``get_location_players`` 默认值也是 ``global``）。
+#: 别为了"整齐"把两者合并成一个值，否则玩家榜永远刷不出来。
+_UPSTREAM_LOCATION: dict[RankingKind, str] = {
+    RankingKind.clans: str(GLOBAL_LOCATION_ID),
+    RankingKind.players: "global",
+}
+
 
 async def collect_rankings(
     client: CocClient, session: AsyncSession, now: dt.datetime | None = None
@@ -69,7 +85,7 @@ async def collect_rankings(
     for location_id in location_ids:
         for kind, fetch in _KIND_FETCHERS.items():
             try:
-                payload = await fetch(client, location_id, limit=200)
+                payload = await fetch(client, _UPSTREAM_LOCATION[kind], limit=200)
             except Exception as exc:  # noqa: BLE001 - 单个 scope 失败不能拖垮整轮
                 failed += 1
                 failures.append(f"{kind}/{location_id}: {exc}")

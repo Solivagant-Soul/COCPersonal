@@ -228,8 +228,14 @@ async def get_clan_rankings(
 
 
 async def get_player_rankings(
-    client: CocClient, location_id: int, *, limit: int | None = None
+    client: CocClient, location_id: int | str, *, limit: int | None = None
 ) -> dict[str, Any]:
+    """locationId 走路径；limit 走 query。
+
+    **全服玩家榜的 ``location_id`` 是字符串 ``"global"``**：传数字
+    ``32000000`` 会 404 ``Rankings not found for location``（2026-10-23 线上）。
+    部落榜相反，数字 ID 可用 —— 所以这里保留 ``int | str``，**别强转成 int**。
+    """
     params = {"limit": limit} if limit is not None else None
     return await client.get(
         f"/locations/{location_id}/rankings/players", params=params

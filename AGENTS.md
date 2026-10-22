@@ -69,6 +69,10 @@ npm run dev       # :5173，/api 已反代到 :8000
   都城榜 / 部落基地榜 / 玩家基地榜已停采、路由已删（404）。**注意 Global 的
   `isCountry` 是 false** —— 靠 `is_country` 过滤会把它漏掉。详见
   `backend/AGENTS.md` 与规格里的裁定条目。
+- **2026-10-23：全服玩家榜的上游路径是 `/locations/global/rankings/players`**，
+  不是 `/locations/32000000/rankings/players`（后者 404 `Rankings not found for
+  location`；部落榜用 32000000 却是 200）。**落库 scope 仍统一是 32000000**，
+  只有上游路径参数不同，别把两者混成一个值。
 - **前端是深色主题**（参照 coc.daozishule.cn）：改样式时用 `main.css` 里的
   主题变量（`--surface-*` / `--text-*` / `--accent-gold`），**别写死颜色**。
   Element Plus 的深色靠覆盖它的 CSS 变量实现 —— 新加组件时要确认它在深色下

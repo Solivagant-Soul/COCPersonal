@@ -527,6 +527,37 @@ async def test_collect_rankings_writes_only_clans_and_players(session, settings)
     }
 
 
+async def test_collect_rankings_uses_global_virtual_location_for_players(session, settings):
+    """玩家榜在上游挂在虚拟地区 ``global`` 下，不是数字 ID 32000000。
+
+    2026-10-23 线上实景：``/locations/32000000/rankings/clans`` → 200，
+    ``/locations/32000000/rankings/players`` → 404
+    ``Rankings not found for location``。同一个数字 ID 对玩家榜无效，
+    官方只认 ``global``（coc.py 的 ``get_location_players`` 默认值也是它）。
+
+    **落库仍记在全服 32000000 的 scope 下** —— 那是本系统的地区口径，
+    与上游的路径参数不是一回事，别把两者混成一个值。
+    """
+    await _seed_locations(session, 32000000)
+    client = FakeClient(
+        routes={
+            "/rankings/clans": {"items": [{"tag": "#AAA", "name": "A", "rank": 1}]},
+            "/rankings/players": {"items": [{"tag": "#P1", "name": "P1", "rank": 1}]},
+        }
+    )
+    await run_job("rankings", settings, session, client=client)
+
+    clan_paths = [c[1] for c in client.calls if c[1].endswith("/rankings/clans")]
+    player_paths = [c[1] for c in client.calls if c[1].endswith("/rankings/players")]
+    assert clan_paths == ["/locations/32000000/rankings/clans"]
+    assert player_paths == ["/locations/global/rankings/players"]
+
+    rows = (await session.execute(select(Ranking))).scalars().all()
+    player_rows = [r for r in rows if r.kind == RankingKind.players]
+    assert player_rows, "玩家榜必须照样落库"
+    assert {r.location_id for r in player_rows} == {32000000}
+
+
 async def test_collect_rankings_does_not_request_removed_kinds(session, settings):
     """连请求都不能发 —— 不只是不写库。
 

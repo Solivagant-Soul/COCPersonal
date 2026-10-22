@@ -357,6 +357,27 @@ async def test_player_rankings_path():
         await client.aclose()
 
 
+async def test_player_rankings_accepts_global_virtual_location():
+    """全服玩家榜的路径参数是字符串 ``global``，不是数字 ID。
+
+    2026-10-23 线上：``/locations/32000000/rankings/players`` 返回 404
+    ``Rankings not found for location``，同一个 ID 用在部落榜上却是 200。
+    所以这里必须允许字符串，别为了"类型整洁"把它强转成 int。
+    """
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"items": []})
+
+    client = make_client(handler)
+    try:
+        await get_player_rankings(client, "global", limit=200)
+        assert calls[0] == "/v1/locations/global/rankings/players?limit=200"
+    finally:
+        await client.aclose()
+
+
 async def test_leaguetiers_and_single_leaguetier_paths():
     calls = []
 

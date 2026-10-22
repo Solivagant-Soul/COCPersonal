@@ -234,3 +234,10 @@ frontend/src/
 > `/locations` 只返回全服（前端不再需要挑地区）。迁移 0011 清掉库里的历史行。
 > 赛季榜（`season_players`）**不受影响** —— 它是另一条 scope
 > （`league_id` + `season_id`，无 `location_id`）。
+
+> **裁定（2026-10-23）**：**落库 scope 是 32000000，但玩家榜的上游路径参数是
+> 虚拟地区 `global`。** `/locations/32000000/rankings/players` 返回 404
+> `Rankings not found for location`（同一 ID 用于部落榜却是 200），
+> `/locations/global/rankings/players` 才是全服玩家榜。两者在
+> `app/collector/jobs/rankings.py` 的 `_UPSTREAM_LOCATION` 里分开维护，
+> API / 前端契约保持 32000000 不变。

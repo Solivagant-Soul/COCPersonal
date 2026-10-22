@@ -1297,6 +1297,10 @@ GET /v1/locations/{locationId}/rankings/clans
 GET /v1/locations/{locationId}/rankings/players
 ```
 
+> **全服玩家榜的地区参数是字符串 `global`**：`/v1/locations/global/rankings/players`。
+> 传数字 `32000000` 会 `404 Rankings not found for location`；部落榜正好相反，
+> 用 `32000000` 正常（2026-10-23 线上实测）。
+
 **查询参数**：`limit`（默认 `10`，`1`–`50`）、`after`、`before`
 
 ```json

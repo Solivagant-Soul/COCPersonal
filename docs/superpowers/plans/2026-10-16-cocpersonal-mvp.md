@@ -966,4 +966,37 @@ BuildKit（`docker:default` 驱动 + `=>` 进度格式），所以 cache mount �
 **教训**：`backend/docs/API接口说明.md` 是手写的参考，`limit` 范围和 id 空间都写错过。
 凡涉及「参数取值范围 / id 属于哪套空间」，一律先探针、再写回文档 —— 手写文档不是权威。
 
+## Task 20：全服玩家榜的上游路径是 `global`（2026-10-23）
+
+**背景**：排行榜收窄为「全服 × 部落/玩家」后，线上手工跑
+`collect rankings` 得到 `partial`：
+
+```
+GET /v1/locations/32000000/rankings/clans?limit=200   -> 200 OK
+GET /v1/locations/32000000/rankings/players?limit=200 -> 404 Rankings not found for location
+```
+
+**根因**：同一个「全服」在官方接口里有**两种表示**，而且按榜种不同：
+
+| 榜种 | 上游路径参数 | 结果 |
+| --- | --- | --- |
+| 部落榜 | `32000000` | `200`（实测） |
+| 玩家榜 | `32000000` | `404 Rankings not found for location` |
+| 玩家榜 | `global` | 官方唯一入口（coc.py 的 `get_location_players` 默认值即 `global`） |
+
+这不是 Token / 代理 / 限流问题：404 的 reason 是「该地区没有这份榜」，
+业务态错误，重试没有意义。
+
+**处置**：
+
+- `app/collector/jobs/rankings.py` 新增 `_UPSTREAM_LOCATION`：部落榜 `"32000000"`、
+  玩家榜 `"global"`。**落库 scope 两边仍然是 32000000**，API / 前端契约不变；
+- `app/coc/endpoints.py::get_player_rankings` 的类型放宽到 `int | str`，
+  **不要为了「类型整洁」强转成 int**；
+- 守门测试：`tests/collector/test_jobs.py::test_collect_rankings_uses_global_virtual_location_for_players`
+  （断言上游路径 + 落库 location_id），
+  `tests/coc/test_endpoints.py::test_player_rankings_accepts_global_virtual_location`；
+- `backend/docs/API接口说明.md` 与两份 `AGENTS.md` 记下这条差异。
+
+
 
