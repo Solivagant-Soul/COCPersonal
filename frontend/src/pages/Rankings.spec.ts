@@ -1,5 +1,4 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,6 +8,7 @@ vi.mock('../api/endpoints', () => ({
 }))
 
 import { getRankings } from '../api/endpoints'
+import { installElementPlus } from '../plugins/element'
 import Rankings from './Rankings.vue'
 
 const router = createRouter({
@@ -42,7 +42,11 @@ const rankingsPage = {
 async function mountRankings() {
   await router.push({ name: 'rankings' })
   await router.isReady()
-  const w = mount(Rankings, { global: { plugins: [router, ElementPlus] } })
+  // 用**生产同一个**安装函数：语言包只在 plugins/element.ts 配一处，
+  // 测试自己传一份的话，「线上英文、测试中文」根本发现不了。
+  const w = mount(Rankings, {
+    global: { plugins: [router, { install: installElementPlus }] },
+  })
   await flushPromises()
   return w
 }
@@ -63,6 +67,14 @@ describe('Rankings', () => {
     // 它自己就渲染一个页长选择器。断言「没有地区选项」才对。
     expect(w.text()).not.toContain('选择地区')
     expect(w.find('.toolbar__select').exists()).toBe(false)
+  })
+
+  it('分页文案是中文，不是 Element Plus 默认的 Total / page', async () => {
+    const w = await mountRankings()
+
+    expect(w.text()).toContain('共 1 条')
+    expect(w.text()).toContain('20条/页')
+    expect(w.text()).not.toContain('Total')
   })
 
   it('只提供部落与玩家两个榜种', async () => {
