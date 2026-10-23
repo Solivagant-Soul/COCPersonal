@@ -102,6 +102,26 @@ def test_app_role_defaults_to_all():
 
 
 # --------------------------------------------------------------------------- #
+# War Report（第三方上游：无需 Key，但配置必须能透传）
+# --------------------------------------------------------------------------- #
+
+
+def test_env_example_has_warreport_base_url():
+    """示例文件里要有 WARREPORT_BASE_URL。
+
+    它不是密钥（没有 Key、没有白名单），所以**不**是空占位：写成可用默认值，
+    运维才知道这个开关存在（不设这两项也能跑，但没人会去看 config.py）。
+    """
+    assert "WARREPORT_BASE_URL" in _read(".env.example")
+
+
+def test_backend_compose_passes_warreport_env():
+    """本目录的 compose 同样要透传 War Report 配置（两套部署栈各有一份）。"""
+    env = _compose()["services"]["api"]["environment"]
+    assert "WARREPORT_BASE_URL" in env
+
+
+# --------------------------------------------------------------------------- #
 # nginx
 # --------------------------------------------------------------------------- #
 

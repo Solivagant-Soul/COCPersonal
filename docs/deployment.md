@@ -645,7 +645,106 @@ docker compose exec api alembic upgrade head
 | 排行榜空 | 夹具模式没跑 §5；真实模式 `meta/freshness` 看采集时间和 `collectorRuns` |
 | 磁盘满 | `backup.sh` 未设时备份会吃满磁盘——恢复它或手动清理（磁盘满的表象是"服务正常但数据不再更新"） |
 
-## 12. 已知限制
+## 12. War Report 数据源与署名
+
+赛季榜与阵容页的数据来自第三方 **[War Report](https://warreport.app)**（只读 API
+`https://api.warreport.app`）。它与 Supercell 官方链路**完全独立**：不需要 API Key、
+没有 IP 白名单、不占令牌桶，默认配置就能跑。「阵型」页本期只是占位，没有数据源。
+
+### 12.1 端点与调度
+
+| 用途 | 上游端点 | 落库 |
+| --- | --- | --- |
+| 赛季玩家榜 | `GET /locations/global/rankings/players?season=YYYY-MM-DD` | `rankings`（kind=`wr_season_players`） |
+| 赛季部落榜 | `GET /locations/global/rankings/clans?season=YYYY-MM-DD` | `rankings`（kind=`wr_season_clans`） |
+| 热门配兵（阵容页） | `GET /armies` | `warreport_armies`（每次整表替换） |
+| 快照探测 | `GET /locations/global/rankings/players/countries?season=...` | 不落库（3.8 KB） |
+
+- 采集 job 名 `warreport`，**每天 `04:23 UTC` 一次**（cron `23 4 * * *`，错开整点）。
+  上游快照 28 天才出一份，每天一次已经足够。
+- 调度器与 API **同进程**：`APP_ROLE=all`（默认）或 `collector` 才会跑；`api` 角色不跑
+  调度器（多起一个只是白跑）。角色门控见 `backend/app/collector/scheduler.py`。
+- 对外路由（`/api/v1/rankings/warreport/...`、`/api/v1/armies`）**只读库、绝不回源**，
+  所以没有 STALE 降级路径；数据新不新看响应里的 `meta.fetched_at`。
+
+### 12.2 首次运行会多打一些请求（正常）
+
+上游**没有**赛季列表接口，响应里也不带日期，所以「某个赛季是否存在」只能拿
+`players/countries?season=YYYY-MM-DD` 逐个试：
+
+- 库里已有快照：只探「最新已知 + 28 天」那一档的最多 3 个候选日期（若最新已知已过
+  31 天仍探不到新快照，会判定锚点不可信、回退到逐日回溯）；
+- 全新部署（库里没有快照）：从今天往前逐日回溯（最多 35 次），命中后按 28 天间隔
+  补探，一次凑满最近 3 个赛季 —— 2026-10-23 首跑实测是 **19 次逐日探测 + 最多 6 次
+  补探**；
+- 回 `404 {"error":"snapshot not found"}` = **这个日期没有快照，是正常结果**，不计失败；
+  只有网络错误/5xx 才计失败（否则「快照永远不更新」会被记成 success）。
+
+所以首跑比之后吵一些是设计使然，第二次运行起只探 3 个候选。上游是共享公共服务，
+**不要**为了「快点看到数据」把它改成高频轮询。
+
+### 12.3 验证
+
+```bash
+docker compose exec api python -m app.cli collect warreport
+# 期望：采集 job warreport -> success (ok=7 failed=0)
+# ok 数的是**成功的 scope**（3 个快照 × 玩家/部落两类榜 + 阵容 = 7），不是行数。
+# 首次部署若只探到 1 个快照，ok 会相应少几个 —— 看 items_failed 是否为 0 更可靠。
+
+# 接口侧（路由只读库，采完就能看到）
+curl -s http://127.0.0.1/api/v1/rankings/warreport/seasons | python3 -m json.tool
+curl -s "http://127.0.0.1/api/v1/rankings/warreport/seasons/2026-10-05/players?page_size=5"
+curl -s http://127.0.0.1/api/v1/armies | head -c 300
+```
+
+赛季列表最多 3 条（`2026-10-05` / `2026-09-07` / `2026-08-10`，具体以当日上游为准）；
+阵容条数**不要写死**：返回的是「当前快照里出现过的配兵」，实测会变。
+
+### 12.4 上游不可用时
+
+- 采集 job 记 `failed`/`partial`，明细进 `collector_runs.error`；看最近 20 次运行
+  `curl -s http://127.0.0.1/api/v1/meta/freshness` 的 `data.collectorRuns`。
+- **旧数据继续可读**：路由不触上游，所以赛季榜与阵容页**不会 500**，最多停在上一轮。
+- 探测阶段的网络错误会让**整轮**记失败，不会被伪装成「今天没有新快照」——
+  这是刻意的：否则赛季榜永远不更新也看不出来。
+
+### 12.5 署名（使用条件，不是装饰）
+
+上游 OpenAPI 原文：*Attribution required: Applications using this API must credit
+War Report.* 本站落点三处，**改页面时不得移除**：
+
+| 位置 | 文案 |
+| --- | --- |
+| 排行榜「赛季榜」面板底部 | 数据来源：War Report · 非 Supercell 官方，未获 Supercell 背书 |
+| 阵容页底部 | 同上 |
+| 全站页脚 | 本站为非官方粉丝站点 · 数据来源：Supercell 官方 API、War Report |
+
+- 组件 `frontend/src/components/SourceNote.vue`（赛季榜与阵容页共用），页脚在
+  `frontend/src/layouts/MainLayout.vue`。
+- 两处文案与链接都由前端测试盯着（`SourceNote.spec.ts`、`Rankings.spec.ts`、
+  `Armies.spec.ts`、`MainLayout.spec.ts`），删掉会红。
+- 链接：https://warreport.app
+
+### 12.6 非官方声明
+
+War Report 的数据本身是**非官方**的（上游 OpenAPI：*This material is unofficial and is
+not endorsed by Supercell.*）。本站同样不是 Supercell 官方站点、未获 Supercell 背书；
+使用这些数据须遵守 Supercell 的 **Fan Content Policy**
+（https://supercell.com/en/fan-content-policy/）。**不要**把赛季榜/阵容说成官方数据，
+也不要用于商业售卖。
+
+### 12.7 配置项
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `WARREPORT_BASE_URL` | `https://api.warreport.app` | 上游地址；指向测试假上游时改这里 |
+| `WARREPORT_TIMEOUT` | `15`（秒） | 单请求超时 |
+
+两份 `docker-compose.yml` 的 `api.environment` 都已透传这两项（**不是密钥**，所以
+`.env.example` 里给的是可用默认值而不是空占位）。改了 `.env` 照例要
+`./deploy/compose.sh up -d`，`restart` 不重读环境变量（见 §7）。
+
+## 13. 已知限制
 
 | # | 内容 |
 | --- | --- |

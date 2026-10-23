@@ -73,6 +73,9 @@ npm run dev       # :5173，/api 已反代到 :8000
   不是 `/locations/32000000/rankings/players`（后者 404 `Rankings not found for
   location`；部落榜用 32000000 却是 200）。**落库 scope 仍统一是 32000000**，
   只有上游路径参数不同，别把两者混成一个值。
+- **2026-10-23：赛季榜与阵容数据来自 War Report（https://warreport.app，无需 Key）**。
+  **署名是使用条件**：赛季榜面板、阵容页、全站页脚三处都要保留（`SourceNote.vue` /
+  `MainLayout.vue`）。**改这些相关页面前先读 `docs/deployment.md` §12**。
 - **前端是深色主题**（参照 coc.daozishule.cn）：改样式时用 `main.css` 里的
   主题变量（`--surface-*` / `--text-*` / `--accent-gold`），**别写死颜色**。
   Element Plus 的深色靠覆盖它的 CSS 变量实现 —— 新加组件时要确认它在深色下

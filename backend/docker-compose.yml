@@ -37,6 +37,9 @@ services:
       # 留空走官方；填 https://cocproxy.royaleapi.dev/v1 走 RoyaleAPI 代理
       COC_BASE_URL: ${COC_BASE_URL:-}
       COC_TIMEOUT: ${COC_TIMEOUT:-15}
+      # War Report（赛季榜 / 阵容）：第三方只读 API，无需 Key/白名单（§12）。
+      WARREPORT_BASE_URL: ${WARREPORT_BASE_URL:-https://api.warreport.app}
+      WARREPORT_TIMEOUT: ${WARREPORT_TIMEOUT:-15}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
       ADMIN_USERNAME: ${ADMIN_USERNAME:?必须在 .env 里设置 ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?必须在 .env 里设置 ADMIN_PASSWORD}

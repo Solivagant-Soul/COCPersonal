@@ -53,6 +53,10 @@ services:
       # 对 Supercell 的令牌桶速率。走共享代理时不要调高。
       COC_RATE_LIMIT: ${COC_RATE_LIMIT:-8}
       COC_TIMEOUT: ${COC_TIMEOUT:-15}
+      # War Report（赛季榜 / 阵容）：第三方只读 API，无需 Key/白名单。
+      # 不改的话用默认值也能跑；署名是使用条件，见 docs/deployment.md §12。
+      WARREPORT_BASE_URL: ${WARREPORT_BASE_URL:-https://api.warreport.app}
+      WARREPORT_TIMEOUT: ${WARREPORT_TIMEOUT:-15}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
       # 后台只认环境变量（不入库、无 create-admin 命令）
       ADMIN_USERNAME: ${ADMIN_USERNAME:?必须在 .env 里设置 ADMIN_USERNAME}

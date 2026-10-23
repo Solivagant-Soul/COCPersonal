@@ -90,6 +90,25 @@ def test_only_web_exposes_ports():
     assert "ports" not in services["postgres"]
 
 
+def test_api_passes_warreport_env():
+    """War Report 的上游地址与超时必须能从 .env 透传进容器。
+
+    漏掉这两行不会有任何报错：容器里用 config.py 的默认值照样能跑，
+    于是「我在 .env 里改成了测试假上游」被无声忽略，排障方向会完全跑偏。
+    """
+    env = _compose()["services"]["api"]["environment"]
+    assert "WARREPORT_BASE_URL" in env
+    assert "WARREPORT_TIMEOUT" in env
+
+
+def test_deployment_doc_credits_war_report():
+    """署名是 War Report 的使用条件：页面可见 + 部署文档写明，缺一不可。"""
+    doc = (REPO_ROOT / "docs" / "deployment.md").read_text(encoding="utf-8")
+    assert "War Report" in doc
+    assert "署名" in doc
+    assert "https://warreport.app" in doc
+
+
 # --------------------------------------------------------------------------- #
 # deploy/compose.sh：存在 + 可执行
 # --------------------------------------------------------------------------- #
