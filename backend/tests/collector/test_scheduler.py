@@ -117,12 +117,13 @@ def _expand_minute_field(field: str) -> set[int]:
     return out
 
 
-def test_schedule_spec_covers_the_four_jobs():
+def test_schedule_spec_covers_the_five_jobs():
     assert {name for _, name, _ in SCHEDULE_SPEC} == {
         "static_data",
         "rankings",
         "leagues",
         "seasons",
+        "warreport",
     }
 
 

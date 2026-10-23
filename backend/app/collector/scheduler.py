@@ -29,7 +29,7 @@ VALID_ROLES = frozenset({"all", "api", "collector"})
 #: 整点跑一次 —— 正好是这条规则要避免的。想表达"每 6 小时且错开整点"，必须
 #: 写成 ``13 */6 * * *``（错的是我第一次写成这样才对）之外的形式时，请先想清楚
 #: 分钟字段到底展开成哪几个值。
-#: 每条 cron 的分钟字段都**错开整点**（17 / 13 / 41 / 29）。
+#: 每条 cron 的分钟字段都**错开整点**（17 / 13 / 41 / 29 / 23）。
 #:
 #: rankings 是 ``13 */6 * * *``：分钟固定 13，小时每 6 小时一次。**不要**把它
 #: 写成 ``*/6`` 分钟 —— 那是"每 6 分钟"，一天 240 次，官方会直接限流。
@@ -38,6 +38,9 @@ SCHEDULE_SPEC: list[tuple[str, str, int]] = [
     ("13 */6 * * *", "rankings", 21600),
     ("41 * * * *", "leagues", 3600),
     ("29 * * * *", "seasons", 3600),
+    # War Report 是第三方 API（不带 Token），但同样错开整点；每天一次足够 ——
+    # 上游快照 28 天才出一份。
+    ("23 4 * * *", "warreport", 86400),
 ]
 
 #: 这些角色要跑调度器。``api`` 明确排除：多起一个调度器就是白白消耗令牌桶。
@@ -76,7 +79,8 @@ def build_scheduler(settings: Settings) -> CollectorScheduler:
 def register_jobs(collector: CollectorScheduler) -> CollectorScheduler:
     """把 :data:`SCHEDULE_SPEC` 挂到调度器上。
 
-    每个 job 触发时自己开 session 与 CocClient —— 调度器在应用 lifespan 之外
+    每个 job 触发时自己开 session 与客户端（官方 ``CocClient`` 或 War Report
+    客户端，由 ``run_job`` 按 job 名选）—— 调度器在应用 lifespan 之外
     活着，没有一个"当前 session"可依赖。``run_job`` 不收 ``client`` 时会自建。
     """
     from app.collector.service import run_job

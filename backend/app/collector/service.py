@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from enum import StrEnum
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +27,13 @@ from app.collector.jobs.leagues import collect_leagues
 from app.collector.jobs.rankings import collect_rankings
 from app.collector.jobs.seasons import collect_seasons
 from app.collector.jobs.static_data import collect_static_data
+from app.collector.jobs.warreport import collect_warreport
 from app.db.models import CollectorRun
+
+if TYPE_CHECKING:
+    # 只为类型检查：``from __future__ import annotations`` 让注解不在导入期求值，
+    # 真正的客户端实现由 ``run_job`` 在自建客户端时按 job 名 import。
+    from app.warreport.client import WarReportClient
 
 logger = logging.getLogger("coc.collector")
 
@@ -43,11 +49,16 @@ class RunStatus(StrEnum):
 
 
 #: job 名 → 实现。键即 :data:`app.collector.scheduler.SCHEDULE_SPEC` 里的名字。
-JOBS: dict[str, Callable[[CocClient, AsyncSession], Awaitable[dict[str, int]]]] = {
+#:
+#: 客户端与返回形状都不统一（官方采集用 ``CocClient``、War Report 用
+#: ``WarReportClient``），所以标注写成 ``Any`` 的入参 + ``Any`` 的返回：
+#: 各 job 自己的统计口径不同，由 :func:`_summarize` 收敛。
+JOBS: dict[str, Callable[[Any, AsyncSession], Awaitable[dict[str, Any]]]] = {
     "static_data": collect_static_data,
     "rankings": collect_rankings,
     "leagues": collect_leagues,
     "seasons": collect_seasons,
+    "warreport": collect_warreport,
 }
 
 
@@ -68,7 +79,7 @@ async def run_job(
     settings: Any = None,
     session: AsyncSession | None = None,
     *,
-    client: CocClient | None = None,
+    client: CocClient | WarReportClient | None = None,
 ) -> str:
     """跑一个采集 job，返回最终 status。
 
@@ -95,12 +106,19 @@ async def run_job(
         from app.coc.ratelimit import MemoryRateLimiter
 
         effective = settings or get_settings()
-        client = CocClient(
-            effective.coc_api_token,
-            MemoryRateLimiter(rate=effective.coc_rate_limit),
-            timeout=effective.coc_timeout,
-            base_url=effective.coc_base_url,
-        )
+        if job_name == "warreport":
+            # 上游是第三方只读 API（warreport.app），没有令牌桶也没有 key ——
+            # 拿 CocClient 去打它只会 401/404。
+            from app.warreport.client import client_from_settings
+
+            client = client_from_settings(effective)
+        else:
+            client = CocClient(
+                effective.coc_api_token,
+                MemoryRateLimiter(rate=effective.coc_rate_limit),
+                timeout=effective.coc_timeout,
+                base_url=effective.coc_base_url,
+            )
 
     now = dt.datetime.now(dt.UTC)
     run = CollectorRun(

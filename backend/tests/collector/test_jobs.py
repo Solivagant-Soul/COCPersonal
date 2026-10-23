@@ -635,7 +635,13 @@ async def test_run_job_rejects_unknown_job_name(session, settings):
 
 
 async def test_run_job_is_registered_in_the_job_table(session, settings):
-    assert set(service.JOBS) == {"static_data", "rankings", "leagues", "seasons"}
+    assert set(service.JOBS) == {
+        "static_data",
+        "rankings",
+        "leagues",
+        "seasons",
+        "warreport",
+    }
 
 
 def test_every_job_in_the_table_is_actually_scheduled(settings):
