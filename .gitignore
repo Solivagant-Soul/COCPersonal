@@ -11,3 +11,5 @@ dist/
 .cache/
 .superpowers/
 .DS_Store
+# Fankit 下载的素材图（本地约 167 MB，不入库）
+pictures/
