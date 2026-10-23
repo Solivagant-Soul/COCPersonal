@@ -50,8 +50,12 @@ def _clamp(page_size: int) -> int:
     return clamp_page_size(page_size)
 
 
-def _out(row: Ranking) -> dict:
-    """一条榜单 → 前端形状。字段名保持 camelCase，与官方的其余接口一致。"""
+def ranking_out(row: Ranking) -> dict:
+    """一条榜单 → 前端形状。字段名保持 camelCase，与官方的其余接口一致。
+
+    公开（无下划线）是因为 ``warreport.py`` 也要用：赛季榜与实时榜必须同形状，
+    复用同一个序列化函数才能保证「加了一个字段只改一处」。
+    """
     return {
         "rank": row.rank,
         "previousRank": row.previous_rank,
@@ -70,7 +74,12 @@ def _out(row: Ranking) -> dict:
     }
 
 
-def _fresh_meta(fetched_at: dt.datetime | None) -> MetaOut:
+def fresh_meta(fetched_at: dt.datetime | None, ttl: int = 21600) -> MetaOut:
+    """统一 meta。``ttl`` 默认是榜单的 6 小时。
+
+    公开（无下划线）是因为 ``warreport.py`` 也复用：赛季榜 / 阵容一天一采，
+    调用时传 ``ttl=86400``；默认值保持实时榜的既有行为不变。
+    """
     age = (
         int((dt.datetime.now(UTC) - fetched_at).total_seconds())
         if fetched_at is not None
@@ -81,7 +90,7 @@ def _fresh_meta(fetched_at: dt.datetime | None) -> MetaOut:
         cache="MISS" if fetched_at is None else "HIT",
         fetched_at=fetched_at,
         age_seconds=age,
-        ttl_seconds=21600,
+        ttl_seconds=ttl,
     )
 
 
@@ -124,7 +133,7 @@ async def list_locations(
                       for r in rows],
             "total": total,
         },
-        meta=_fresh_meta(None),
+        meta=fresh_meta(None),
     )
 
 
@@ -167,8 +176,12 @@ async def _ranking_page(
         await session.close()
 
     return DataOut(
-        data={"items": [_out(r) for r in rows], "total": total, "kind": str(kind)},
-        meta=_fresh_meta(latest),
+        data={
+            "items": [ranking_out(r) for r in rows],
+            "total": total,
+            "kind": str(kind),
+        },
+        meta=fresh_meta(latest),
     )
 
 
@@ -236,12 +249,12 @@ async def season_rankings(
 
     return DataOut(
         data={
-            "items": [_out(r) for r in rows],
+            "items": [ranking_out(r) for r in rows],
             "total": total,
             "leagueId": league_id,
             "seasonId": season_id,
         },
-        meta=_fresh_meta(latest),
+        meta=fresh_meta(latest),
     )
 
 
@@ -275,7 +288,7 @@ async def list_seasons(league_id: int):
                 for r in rows
             ]
         },
-        meta=_fresh_meta(None),
+        meta=fresh_meta(None),
     )
 
 
@@ -326,7 +339,7 @@ async def list_leagues(
             "items": [{"id": r.id, "name": r.name, "kind": r.kind} for r in rows],
             "total": total,
         },
-        meta=_fresh_meta(None),
+        meta=fresh_meta(None),
     )
 
 
@@ -380,5 +393,5 @@ async def meta_freshness():
                 for j, s, f in runs
             ],
         },
-        meta=_fresh_meta(None),
+        meta=fresh_meta(None),
     )

@@ -30,6 +30,7 @@ from app.api.routes import (
     submissions,
     system,
     upgrade,
+    warreport,
 )
 from app.coc.client import CocClient
 from app.coc.devfixtures import FixtureTransport, is_placeholder_token
@@ -142,6 +143,9 @@ def create_app() -> FastAPI:
     # 排行榜放在 players 之后：/rankings/{kind} 与 /leagues/{kind} 的路径段不会与
     # 前两者冲突，但保持"资源在前、子资源在后"的顺序便于排查
     app.include_router(rankings.router)
+    # War Report 赛季榜紧跟在排行榜后：/rankings/warreport/seasons 比
+    # /rankings/{kind} 多两段，不会互相截胡
+    app.include_router(warreport.router)
     app.include_router(upgrade.router)
     app.include_router(content.router)
     app.include_router(submissions.router)
