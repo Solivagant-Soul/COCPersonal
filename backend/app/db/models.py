@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     BigInteger,
     Boolean,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -743,4 +744,49 @@ class BaseLayout(Base):
     )
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
+    )
+
+
+# --------------------------------------------------------------------------- #
+# War Report 数据（§5.3.2）
+# --------------------------------------------------------------------------- #
+
+
+class WarReportArmy(Base):
+    """War Report 阵容（配兵）使用统计，**每次都整表替换**。
+
+    数据来自第三方 https://api.warreport.app 的 ``/armies``，与
+    :class:`ArmyComposition` **不是一回事**：后者是投稿/后台录入的内容
+    （标题、描述、子项），这里存的是"某种配兵被多少人用过、平均几星几拆"。
+    混用会让两类数据互相污染。
+
+    刷新策略与排行榜同源（先 ``DELETE`` 全表再批量 ``INSERT``，同一事务），所以
+    ``canonical_key`` 的唯一约束**不是**给 upsert 用的 —— 它挡的是上游同一次响应
+    里出现两条同 key 的脏行。
+
+    约束名必须显式写出且与迁移 0012 逐字一致：``Base`` 没有配
+    ``naming_convention``，写成 ``unique=True`` 会落成 Postgres 自动名
+    ``warreport_armies_canonical_key_key``，此后 ``--autogenerate`` 会反复生成
+    「删约束 / 建约束」。
+    """
+
+    __tablename__ = "warreport_armies"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # 上游顺序即使用率降序；它本身不给序号，由 job 按 1 起连续编号（过滤后再编）
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    canonical_key: Mapped[str] = mapped_column(Text, nullable=False)
+    army_share_code: Mapped[str] = mapped_column(Text, nullable=False)
+    army_link: Mapped[str] = mapped_column(Text, nullable=False)
+    player_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    use_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    percentage: Mapped[float] = mapped_column(Float, nullable=False)
+    average_stars: Mapped[float] = mapped_column(Float, nullable=False)
+    average_destruction: Mapped[float] = mapped_column(Float, nullable=False)
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("canonical_key", name="uq_warreport_armies_canonical_key"),
+        Index("ix_warreport_armies_position", "position"),
     )

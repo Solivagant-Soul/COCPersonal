@@ -44,23 +44,34 @@ class RankingKind(StrEnum):
     编辑器补全。``StrEnum`` 的成员本身就是 ``str``，所以 ``Ranking.kind ==
     RankingKind.clans`` 与 ``== "clans"`` 等价，查测试里两种写法都能用。
 
-    **只有 3 类**：两类地区榜（部落 / 玩家）+ 一类赛季榜。
+    **共 5 类**：3 类官方榜（全服部落 / 全服玩家 / 赛季玩家）+ 2 类 War Report
+    赛季榜（玩家 / 部落）。
+
     都城榜、部落基地榜、玩家基地榜已移除（2026-10-22）—— 需求收窄成
     "只收集部落和玩家的数据"，而它们没有消费方，留着只是白烧令牌桶。
     库里的历史行由迁移 0011 清掉。
+
+    赛季榜两类来自 War Report，按快照日期分 scope：``season_id`` 是快照日期
+    （``YYYY-MM-DD``），``location_id`` 仍是 32000000，``league_id`` 为 NULL。
     """
 
     clans = "clans"
     players = "players"
     season_players = "season_players"
+    wr_season_players = "wr_season_players"
+    wr_season_clans = "wr_season_clans"
 
 
-#: 各 kind 是否带 tag。
+#: 各 kind 是否带 tag。War Report 的两类赛季榜同样带 tag —— 漏了它们，
+#: ``_row_from_item`` 会放过缺 tag 的脏行，落成 ``tag=NULL``；而 PostgreSQL
+#: 认为 NULL 互不相等，唯一约束在那批行上等于失效。
 _HAS_TAG = frozenset(
     {
         RankingKind.clans,
         RankingKind.players,
         RankingKind.season_players,
+        RankingKind.wr_season_players,
+        RankingKind.wr_season_clans,
     }
 )
 

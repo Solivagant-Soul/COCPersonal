@@ -410,15 +410,18 @@ async def test_ranking_has_no_fk_to_dimension_tables(session):
 
 
 def test_ranking_kind_covers_all_kinds():
-    """榜单类型只有 3 类（2026-10-22 收窄）。
+    """3 类官方榜 + 2 类 War Report 赛季榜（2026-10-22 收窄后新增）。
 
     都城榜 / 部落基地榜 / 玩家基地榜已移除 —— 需求只要部落和玩家的数据，
-    而它们没有消费方。赛季榜是另一条 scope（league + season），还在用。
+    而它们没有消费方。官方赛季榜是另一条 scope（league + season）；War Report
+    的两类赛季榜按快照日期分 scope，也还在用。
     """
     assert {k.value for k in RankingKind} == {
         "clans",
         "players",
         "season_players",
+        "wr_season_players",
+        "wr_season_clans",
     }
 
 
