@@ -36,6 +36,12 @@
     <main class="app-main">
       <router-view />
     </main>
+
+    <footer class="app-footer">
+      <div class="app-footer__inner">
+        本站为非官方粉丝站点 · 数据来源：Supercell 官方 API、War Report
+      </div>
+    </footer>
   </div>
 </template>
 
@@ -45,6 +51,8 @@ import { useRoute } from 'vue-router'
 const NAV_ITEMS = [
   { path: '/', label: '查询' },
   { path: '/rankings', label: '排行榜' },
+  { path: '/armies', label: '阵容' },
+  { path: '/bases', label: '阵型' },
 ]
 
 const route = useRoute()
@@ -164,6 +172,22 @@ const isActive = (path: string) =>
 .app-main {
   flex: 1;
   min-width: 0;
+}
+
+/* ---- 页脚 ----
+ * 与 header 用同一组 --page-max / --page-gutter，左右边缘才对得上。
+ */
+.app-footer {
+  border-top: 1px solid var(--border-default);
+}
+.app-footer__inner {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 16px var(--page-gutter);
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
 }
 
 /* 窄屏：把品牌名与搜索文字藏起来，保住导航项 */

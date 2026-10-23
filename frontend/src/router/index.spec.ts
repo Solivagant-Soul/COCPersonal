@@ -19,6 +19,12 @@ describe('路由标题与兜底路由', () => {
 
     await router.push('/clans/%232PP')
     expect(document.title).toBe(`部落详情 · ${APP_TITLE}`)
+
+    await router.push('/armies')
+    expect(document.title).toBe(`阵容 · ${APP_TITLE}`)
+
+    await router.push('/bases')
+    expect(document.title).toBe(`阵型 · ${APP_TITLE}`)
   })
 
   it('不存在的地址落到兜底页而不是空 router-view', async () => {

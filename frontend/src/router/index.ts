@@ -29,6 +29,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '排行榜' },
   },
   {
+    path: '/armies',
+    name: 'armies',
+    component: () => import('../pages/Armies.vue'),
+    meta: { title: '阵容' },
+  },
+  {
+    path: '/bases',
+    name: 'bases',
+    component: () => import('../pages/Bases.vue'),
+    meta: { title: '阵型' },
+  },
+  {
     // 兜底：不存在的地址给一个「能回去」的页面，而不是空的 router-view。
     // SPA 里用户手改地址或点旧链接进来时很常见，空屏会让人以为是坏了。
     path: '/:pathMatch(.*)*',

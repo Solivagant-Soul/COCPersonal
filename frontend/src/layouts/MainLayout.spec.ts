@@ -10,17 +10,30 @@ const router = createRouter({
     { path: '/', name: 'query', component: { template: '<div/>' } },
     { path: '/rankings', name: 'rankings', component: { template: '<div/>' } },
     { path: '/players/:tag', name: 'player', component: { template: '<div/>' } },
+    { path: '/armies', name: 'armies', component: { template: '<div/>' } },
+    { path: '/bases', name: 'bases', component: { template: '<div/>' } },
   ],
 })
 
 describe('MainLayout', () => {
-  it('导航只含查询与排行榜', () => {
+  it('导航是查询 / 排行榜 / 阵容 / 阵型四项', () => {
     const w = mount(MainLayout, { global: { plugins: [router] } })
-    const text = w.text()
-    expect(text).toContain('查询')
-    expect(text).toContain('排行榜')
-    expect(text).not.toContain('投稿')
-    expect(text).not.toContain('公告')
+    expect(w.findAll('.app-nav__link').map((a) => a.text())).toEqual([
+      '查询',
+      '排行榜',
+      '阵容',
+      '阵型',
+    ])
+    // 仍未上线的功能不该出现
+    expect(w.text()).not.toContain('投稿')
+    expect(w.text()).not.toContain('公告')
+  })
+
+  it('页脚声明数据来源', () => {
+    const w = mount(MainLayout, { global: { plugins: [router] } })
+    expect(w.find('footer.app-footer').text()).toContain(
+      '数据来源：Supercell 官方 API、War Report',
+    )
   })
 
   it('用顶部导航（不再是左侧边栏）', () => {
