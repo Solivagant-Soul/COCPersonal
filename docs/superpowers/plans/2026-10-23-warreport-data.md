@@ -815,8 +815,13 @@ Expected: FAIL
    → `commit()`。单 scope 异常 → `rollback()`、`failed += 1`、记明细。
 4. `GET /armies` → 先拿事务级顾问锁 `pg_advisory_xact_lock(0x57524152)` →
    `DELETE FROM warreport_armies` → `session.add_all([WarReportArmy(**row) for ...])`
-   → `commit()`。`row` 来自 `army_row(raw, position, now)`，`position` 从 **1** 开始
-   按上游返回顺序编号（上游不提供序号，顺序即使用率降序）。
+   → `commit()`。`row` 来自 `army_row(raw, position, now)`。
+
+   **`position` 必须在过滤掉 `None` 之后再从 1 连续编号**：`army_row` 会丢掉缺
+   not-null 字段的行（Task 2 的实现），先编号后过滤会留下空洞，前端按 position
+   排序就会看到 1、3、4。写法：先 `filter(None, ...)` 收集有效 raw，再
+   `enumerate(..., start=1)` 调 `army_row`。
+
    **插入前按 `canonical_key` 去重**（保留先出现的那条，`position` 也随之紧凑）：
    上游若哪天返回两条同 key 的配兵，唯一约束会让整次 `commit()` 失败 —— 那时
    `DELETE` 已执行但事务回滚，数据是安全的，可阵容会永远停在旧版本且只有
