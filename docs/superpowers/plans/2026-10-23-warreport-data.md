@@ -15,6 +15,10 @@
 - 后端命令一律在 `backend/` 下执行；前端命令在 `frontend/` 下执行。
 - `python -m pytest -q` 全量必须全绿；前端 `npm run test` 与 `npm run build` 必须全绿。
 - 异步测试**不加** `@pytest.mark.asyncio`（`asyncio_mode=auto`）；一律 `async def` + `await client.get(...)`，禁止同步 `TestClient`。
+- **后端测试文件名必须全局唯一**：`tests/` 下没有 `__init__.py`，pytest 按 basename 导入，
+  而 `tests/coc/test_client.py` 与 `tests/coc/test_mappers.py` 已存在。所以本计划的
+  新文件一律带 `warreport` 前缀：`test_warreport_client.py`、`test_warreport_mappers.py`。
+  重名只在跑全量时才炸（`import file mismatch`），单目录跑是绿的 —— 别被假绿骗了。
 - `app/collector/` 与 `app/warreport/` **不得 import FastAPI**（`APP_ROLE=collector` 要能独立起进程）。
 - 统一响应体 `{"data": ..., "meta": {...}}`，`meta.cache` 必须是**大写** `HIT` / `MISS` / `STALE`。
 - 分页：`page` 默认 1，`page_size` 默认 20，**上限 50 且超限截断为 50**（不是 422）。
@@ -72,7 +76,7 @@
 - Create: `backend/app/warreport/__init__.py`
 - Create: `backend/app/warreport/client.py`
 - Modify: `backend/app/config.py`
-- Test: `backend/tests/warreport/test_client.py`
+- Test: `backend/tests/warreport/test_warreport_client.py`
 
 **Interfaces:**
 - Produces:
@@ -86,7 +90,7 @@
 
 - [ ] **Step 1: 写失败测试**
 
-`backend/tests/warreport/test_client.py`：
+`backend/tests/warreport/test_warreport_client.py`：
 
 ```python
 import ast
@@ -213,7 +217,7 @@ def test_warreport_package_does_not_import_web_framework():
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `python -m pytest tests/warreport/test_client.py -q`
+Run: `python -m pytest tests/warreport/test_warreport_client.py -q`
 Expected: FAIL（`ModuleNotFoundError: app.warreport`）
 
 - [ ] **Step 3: 实现**
@@ -258,13 +262,13 @@ class WarReportClient:
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `python -m pytest tests/warreport/test_client.py -q`
+Run: `python -m pytest tests/warreport/test_warreport_client.py -q`
 Expected: PASS
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add backend/app/config.py backend/app/warreport backend/tests/warreport/test_client.py
+git add backend/app/config.py backend/app/warreport backend/tests/warreport/test_warreport_client.py
 git commit -m "feat: 新增 War Report HTTP 客户端与配置"
 ```
 
@@ -274,7 +278,7 @@ git commit -m "feat: 新增 War Report HTTP 客户端与配置"
 
 **Files:**
 - Create: `backend/app/warreport/mappers.py`
-- Test: `backend/tests/warreport/test_mappers.py`
+- Test: `backend/tests/warreport/test_warreport_mappers.py`
 
 **Interfaces:**
 - Produces:
@@ -372,7 +376,7 @@ def test_army_row_drops_without_canonical_key():
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `python -m pytest tests/warreport/test_mappers.py -q`
+Run: `python -m pytest tests/warreport/test_warreport_mappers.py -q`
 Expected: FAIL（模块不存在）
 
 - [ ] **Step 3: 实现**
@@ -387,13 +391,13 @@ Expected: FAIL（模块不存在）
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `python -m pytest tests/warreport/test_mappers.py -q`
+Run: `python -m pytest tests/warreport/test_warreport_mappers.py -q`
 Expected: PASS
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add backend/app/warreport/mappers.py backend/tests/warreport/test_mappers.py
+git add backend/app/warreport/mappers.py backend/tests/warreport/test_warreport_mappers.py
 git commit -m "feat: 新增 War Report 榜单与配兵映射"
 ```
 
