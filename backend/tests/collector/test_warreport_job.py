@@ -97,7 +97,11 @@ async def test_collect_writes_rankings_and_armies(session):
 async def test_second_run_replaces_instead_of_duplicating(session):
     fake = FakeWarReport({TODAY})
     await collect_warreport(fake, session, now=NOW)
-    await collect_warreport(fake, session, now=NOW)
+    second = await collect_warreport(fake, session, now=NOW)
+    # 第二次也必须**真的重采**：只把行数没翻倍当成通过，一个"已知道的快照就跳过"
+    # 的实现同样能骗过它 —— 而那样榜单会永远停在第一次的数据。
+    assert second["items_ok"] == 3
+    assert second["items_failed"] == 0
     total = (await session.execute(
         select(func.count()).select_from(Ranking)
     )).scalar_one()
@@ -116,8 +120,44 @@ async def test_partial_failure_keeps_other_scopes(session):
     assert (await session.execute(
         select(func.count()).select_from(Ranking)
     )).scalar_one() == 1
+    # 一个 scope 失败不能拦住后面的配兵刷新 —— 这就是"containment"本身
+    assert (await session.execute(
+        select(func.count()).select_from(WarReportArmy)
+    )).scalar_one() == 1
     run = (await session.execute(select(CollectorRun))).scalars().one()
     assert run.status == "partial"
+
+
+async def test_commit_failure_only_fails_that_scope(session, monkeypatch):
+    """``commit()`` 本身失败也只算那一个 scope 失败。
+
+    commit 在 per-scope ``try`` 之外时，一次提交失败会冒泡出 ``collect_warreport``：
+    剩下的 scope 与配兵全都不采，``run_job`` 还把整轮记成 failed —— 尽管前面的
+    scope 早已提交。这里让第二次 commit（clans scope）抛一次，验证边界收紧到位。
+    """
+    real_commit = session.commit
+    calls = {"n": 0}
+
+    async def flaky_commit():
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("commit 掉线")
+        await real_commit()
+
+    monkeypatch.setattr(session, "commit", flaky_commit)
+
+    result = await collect_warreport(FakeWarReport({TODAY}), session, now=NOW)
+
+    assert result["items_ok"] == 2  # players + armies；失败的那个不计 ok
+    assert result["items_failed"] == 1
+    assert "commit 掉线" in str(result["detail"])
+    # 第一个 scope（players）已经提交 → 留得住；失败的那个被回滚掉
+    kinds = (await session.execute(select(Ranking.kind))).scalars().all()
+    assert kinds == [str(RankingKind.wr_season_players)]
+    # 配兵照常刷新
+    assert (await session.execute(
+        select(func.count()).select_from(WarReportArmy)
+    )).scalar_one() == 1
 
 
 async def test_discovery_failure_is_recorded_as_failed(session):

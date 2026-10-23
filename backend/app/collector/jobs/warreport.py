@@ -119,6 +119,11 @@ async def collect_warreport(
                     items,
                     now=now,
                 )
+                # **提交必须在 try 里**：commit 也可能失败（连接断、锁等待超时、
+                # 约束冲突）。放到 except 之外的话，一次提交失败会直接冒泡出本函数
+                # —— 剩下的 scope 与配兵都不再采，run_job 把整轮记成 failed 且
+                # items_ok=0，而前面成功的 scope 其实已经落库了。
+                await session.commit()
             except Exception as exc:  # noqa: BLE001 - 单个 scope 失败不能拖垮整轮
                 failed += 1
                 failures.append(f"{kind}/{snapshot}: {exc}")
@@ -126,7 +131,6 @@ async def collect_warreport(
                 # 前面成功的 scope 已经提交，这里只回滚当前这个
                 await session.rollback()
                 continue
-            await session.commit()
             ok += 1
             logger.debug("warreport %s/%s 写入 %s 条", kind, snapshot, written)
 
@@ -157,20 +161,17 @@ async def _replace_armies(
         # 与赛季榜同理：形状变了要响亮失败，不能把"空"当成"该清空整表"。
         raise ValueError(f"/armies 响应不是列表: {str(raw)[:200]}")
 
-    # 先映射（只为判有效），再重新编号。``army_row`` 会丢掉缺 not-null 字段的行，
-    # 直接按原始下标编号会在前端留下 1、3、4 这样的空洞。
-    candidates = [
-        row
-        for row in (
-            army_row(entry, index, now)
-            for index, entry in enumerate(raw, start=1)
-            if isinstance(entry, dict)
-        )
-        if row is not None
-    ]
+    # 过滤、去重、编号在同一个循环里完成：``position`` 传的是「已接受行数 + 1」，
+    # 也就是这一行**最终**的编号 —— 不先按原始下标编一遍再回头重排。``army_row``
+    # 会丢掉缺 not-null 字段的行，按原始下标编号会在前端留下 1、3、4 这样的空洞。
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for row in candidates:
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        row = army_row(entry, len(rows) + 1, now)
+        if row is None:
+            continue
         # 同一次响应里出现两条同 key 时，唯一约束会让**整次** commit 失败 ——
         # 那时 DELETE 已执行但事务回滚，数据是安全的，可阵容会永远停在旧版本
         # （只有 collector_runs.error 能看到原因）。去重把这种上游脏数据降级成
@@ -182,7 +183,6 @@ async def _replace_armies(
             )
             continue
         seen.add(row["canonical_key"])
-        row["position"] = len(rows) + 1
         rows.append(row)
 
     # 锁 → 删 → 插 → commit。锁是事务级的，commit 时自动释放。
