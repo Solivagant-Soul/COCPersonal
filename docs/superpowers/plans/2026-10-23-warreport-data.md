@@ -444,7 +444,24 @@ async def test_first_run_probes_backwards_and_stops_at_latest():
     client = FakeClient({"2026-10-05"})
     assert await discover_snapshots(client, [], today) == ["2026-10-05"]
     assert client.calls[0] == "2026-10-23"
-    assert len(client.calls) == 19  # 23 日到 5 日，逐日
+    # 23 日到 5 日逐日 19 次；命中后再按 28 天间隔补探 09-07 那一档的 3 个候选，
+    # 全不命中即停（不再往 08-10 探）
+    assert len(client.calls) == 19 + 3
+
+
+async def test_first_run_backfills_up_to_three_snapshots():
+    """首次运行必须一次凑够 3 个赛季。
+
+    只找到「最新一份」就停会让新部署的赛季榜只有 1 个选项，要等两个采集周期
+    （约 8 周）才长到 3 个 —— 而需求就是「最近 3 个赛季」。
+    """
+    today = dt.date(2026, 10, 23)
+    client = FakeClient({"2026-10-05", "2026-09-07", "2026-08-10"})
+    assert await discover_snapshots(client, [], today) == [
+        "2026-10-05",
+        "2026-09-07",
+        "2026-08-10",
+    ]
 
 
 async def test_known_dates_only_probe_three_candidates():
@@ -493,10 +510,18 @@ Expected: FAIL
 `snapshot_exists` 调 `client.get_json("/locations/global/rankings/players/countries",
 {"season": day.isoformat()})`，只吞 `WarReportSnapshotNotFound`。
 
-`discover_snapshots` 按规格 §5.4：有 known 时先探 `latest+28`、`-1`、`+1`；
+`discover_snapshots` 按规格 §5.4（含 R1 裁定）：有 known 时先探 `latest+28`、`-1`、`+1`；
 都不命中且 `(today - latest).days >= FALLBACK_AFTER_DAYS` 时，从 today 往前逐日
-探测最多 `FIRST_RUN_LOOKBACK_DAYS` 天；无 known 时直接逐日回溯。结果去重、
-倒序、取前 `SEASON_COUNT` 个。
+探测最多 `FIRST_RUN_LOOKBACK_DAYS` 天；无 known 时直接逐日回溯。
+
+**命中第一份之后要继续补探**（R1）：以该日期为锚，按 `SEASON_INTERVAL_DAYS`
+往前推，每档探 `候选`、`候选-1`、`候选+1`，直到凑满 `SEASON_COUNT` 份或某一档
+三次全不命中为止。没有这一步，首次部署的赛季榜只有 1 个选项，要等约 8 周才长到 3 个。
+
+回溯分支（无 known，或节奏漂移触发）**只返回补探结果，不与 known 合并** ——
+锚点已经不可信时，旧的 known 可能上游早就删了，继续拉它们只会白报失败。
+有 known 的正常分支才把新命中的日期合并进 known。最后去重、倒序、取前
+`SEASON_COUNT` 个。
 
 - [ ] **Step 4: 跑测试确认通过**
 
@@ -518,6 +543,7 @@ git commit -m "feat: 新增 War Report 赛季快照探测"
 - Modify: `backend/app/collector/rankings_service.py`（`RankingKind` 与 `_HAS_TAG`）
 - Modify: `backend/app/db/models.py`（新增 `WarReportArmy`）
 - Create: `backend/migrations/versions/0012_warreport_armies.py`
+- Modify: `backend/tests/db/test_rankings_refresh.py`（`test_ranking_kind_covers_all_kinds` 的精确集合断言）
 - Test: `backend/tests/db/test_warreport_models.py`
 
 **Interfaces:**
@@ -592,6 +618,11 @@ Expected: FAIL（`WarReportArmy` 不存在 / 表不存在）
 `RankingKind` 增加两个成员；`_HAS_TAG` 加入两者；更新类 docstring（原文「**只有 3 类**」
 改为 5 类，并补一句「赛季榜两类来自 War Report，按快照日期分 scope」）。
 
+**同时改 `tests/db/test_rankings_refresh.py::test_ranking_kind_covers_all_kinds`** ——
+它把取值集合写死成 `{"clans", "players", "season_players"}` 三个，加成员后立刻红。
+改成 5 个成员，并把该测试的 docstring 从「只有 3 类」更新为「3 类官方榜 + 2 类
+War Report 赛季榜」。这是加 `RankingKind` 成员时**唯一**会红的老测试。
+
 `WarReportArmy` 列按规格 §5.3.2。约束**显式命名**，与迁移文件逐字一致 —— `Base` 没有配
 `naming_convention`，`unique=True` 会落成 Postgres 自动名 `warreport_armies_canonical_key_key`，
 和迁移里手写的名字对不上，以后 `alembic revision --autogenerate` 会反复生成「删约束/建约束」：
@@ -628,7 +659,7 @@ down_revision = "b2e8f4c17a93"
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `python -m pytest tests/db/test_warreport_models.py -q`
+Run: `python -m pytest tests/db/test_warreport_models.py tests/db/test_rankings_refresh.py -q`
 Expected: PASS（conftest 会自动 `alembic upgrade head`）
 
 - [ ] **Step 5: 提交**
@@ -636,7 +667,7 @@ Expected: PASS（conftest 会自动 `alembic upgrade head`）
 ```bash
 git add backend/app/collector/rankings_service.py backend/app/db/models.py \
   backend/migrations/versions/0012_warreport_armies.py \
-  backend/tests/db/test_warreport_models.py
+  backend/tests/db/test_warreport_models.py backend/tests/db/test_rankings_refresh.py
 git commit -m "feat: 新增 War Report 阵容表与赛季榜类型"
 ```
 
@@ -1012,8 +1043,8 @@ Expected: FAIL（404）
 - `rankings.py` 里两个小助手改成**可复用**（只是改名 + 加参数，行为不变）：
   - `_fresh_meta(fetched_at)` → `fresh_meta(fetched_at, ttl: int = 21600)`，把硬编码的
     `ttl_seconds=21600` 换成 `ttl`。默认值保持现有所有调用的行为，`rankings.py` 内部
-    8 处调用不用改。
-  - `_out(row)` → `ranking_out(row)`（名字变公开，逻辑一字不改），`rankings.py` 内 4 处
+    6 处调用不用改。
+  - `_out(row)` → `ranking_out(row)`（名字变公开，逻辑一字不改），`rankings.py` 内 2 处
     调用跟着改名。
   - 为什么改名而不是直接 import `_out`：跨模块 import 私有名会让「这是内部实现」的
     信号失效；`warreport.py` 复用这两个函数是**设计意图**（赛季榜与实时榜必须同形状），
@@ -1022,6 +1053,9 @@ Expected: FAIL（404）
   不跨模块借）：
   - `router = APIRouter(prefix="/api/v1")`
   - `_SNAPSHOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")`
+  - **正则只拦形状，必须再用 `dt.date.fromisoformat(snapshot)` 验日历合法性**（R2）：
+    `2026-13-99` 完全符合 `^\d{4}-\d{2}-\d{2}$`，只查正则会把它放进 SQL。
+    两步都不过 → 400。
   - `_KIND_MAP = {"players": RankingKind.wr_season_players, "clans": RankingKind.wr_season_clans}`
   - 非法 snapshot / kind → `HTTPException(400, detail={"code": "INVALID_PARAMS", "message": ...})`
     （`main.py` 的 `StarletteHTTPException` handler 会把它转成
@@ -1274,7 +1308,9 @@ it('切赛季回到第 1 页并重新拉取', async () => {
   const w = await mountRankings()
   await switchToSeason(w)
   vi.mocked(getWarReportSeasonRankings).mockClear()
-  const select = w.findComponent({ name: 'ElSelect' })
+  // 必须按 class 定位：el-pagination 的 layout 含 sizes，自己也会渲染一个
+  // el-select，`findComponent({ name: 'ElSelect' })` 拿到的可能是分页器那个。
+  const select = w.findComponent('.season-select')
   await select.vm.$emit('update:modelValue', '2026-09-07')
   await flushPromises()
   expect(getWarReportSeasonRankings).toHaveBeenCalledWith(
@@ -1327,7 +1363,8 @@ Expected: FAIL
       `seasonSnapshot` 为 `null` 时直接返回。
     - 模板：`el-select` + 部落/玩家 `el-radio-group` + `RankingTable :entity` +
       `el-pagination`（page-sizes 同实时），面板底部固定渲染 `<SourceNote />`
-      （即使空列表也要有署名）。
+      （即使空列表也要有署名）。赛季 `el-select` **必须带 class `season-select`** ——
+      测试靠它定位（分页器自己也有一个 el-select），见 Step 1 的注释。
   - 分页越界：赛季面板用 `@current-change` / `@size-change` 与实时面板同一套写法。
 
 - [ ] **Step 4: 跑测试确认通过**
@@ -1650,15 +1687,16 @@ curl http://127.0.0.1:8000/api/v1/armies
 ```
 
 Expected：
-- `collect warreport` 输出 `success`（首次会回溯探测约 19 次小请求）；
+- `collect warreport` 输出 `success`（首次会逐日回溯 + 按 28 天补探，约 25 次小请求）；
 - 赛季列表 3 条（`2026-10-05` / `2026-09-07` / `2026-08-10`，具体日期以当日上游为准）；
 - 赛季榜 `total` 为 200；
 - 阵容条数**不要写死 55** —— 该接口返回的是「当前快照里出现过的配兵」，实测
   2026-10-23 只有 13 条（之前调研时的 55 条是另一天的快照）。断言「非空且
   `position` 从 1 连续」即可。
 
-> 首次采集要逐日回溯 19 次 `players/countries`（每次 3.8 KB）。这**不是**故障，
-> 是「上游没有赛季列表接口」的必然代价；第二次运行起只探 3 个候选日期。
+> 首次采集要逐日回溯 19 次 `players/countries`（每次 3.8 KB），命中后再按 28 天
+> 间隔补探两档（最多 6 次）。这**不是**故障，是「上游没有赛季列表接口」的必然代价；
+> 第二次运行起只探 3 个候选日期。
 
 - [ ] **Step 4: 浏览器冒烟**
 
