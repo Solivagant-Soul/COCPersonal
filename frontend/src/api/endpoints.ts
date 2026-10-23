@@ -82,6 +82,9 @@ export interface LocationsPage {
  */
 export type RankingKind = 'clans' | 'players'
 
+/** 榜单针对的实体。与 `RankingKind` 取值域相同，只是借一个更贴切的语义名。 */
+export type RankingEntity = RankingKind
+
 export interface RankingRow {
   rank: number
   previousRank?: number | null
@@ -118,6 +121,31 @@ export interface RankingsPage {
   kind: string
 }
 
+/**
+ * War Report 的一个赛季快照。`fetchedAt` 是该赛季数据被抓取的时间，
+ * 后端在没有记录时给 null。
+ */
+export interface WarReportSeason {
+  seasonId: string
+  players: number
+  clans: number
+  fetchedAt: string | null
+}
+
+/** 阵容榜的一行，按 `position` 排好序返回。 */
+export interface ArmyRow {
+  position: number
+  name: string
+  canonicalKey: string
+  armyShareCode: string
+  armyLink: string
+  playerCount: number
+  useCount: number
+  percentage: number
+  averageStars: number
+  averageDestruction: number
+}
+
 export function getPlayer(tag: string): Promise<Envelope<PlayerProfile>> {
   return request<PlayerProfile>(`/api/v1/players/${encodeURIComponent(tag)}`)
 }
@@ -137,7 +165,7 @@ export function getLocations(): Promise<Envelope<LocationsPage>> {
 export const GLOBAL_LOCATION_ID = 32000000
 
 export function getRankings(
-  kind: RankingKind,
+  kind: RankingEntity,
   locationId: number = GLOBAL_LOCATION_ID,
   page = 1,
   pageSize = 20,
@@ -146,4 +174,27 @@ export function getRankings(
     // 注意：HTTP 参数是 snake_case 的 page_size
     params: { locationId, page, page_size: pageSize },
   })
+}
+
+/** 有 War Report 赛季快照的赛季列表，新的在前（后端最多给 3 个）。 */
+export function getWarReportSeasons(): Promise<Envelope<{ items: WarReportSeason[] }>> {
+  return request<{ items: WarReportSeason[] }>('/api/v1/rankings/warreport/seasons')
+}
+
+/** 某个赛季快照的榜单，形状与线上榜单一致（`items` / `total` / `kind`）。 */
+export function getWarReportSeasonRankings(
+  snapshot: string,
+  entity: RankingEntity,
+  page = 1,
+  pageSize = 20,
+): Promise<Envelope<RankingsPage>> {
+  return request<RankingsPage>(
+    `/api/v1/rankings/warreport/seasons/${snapshot}/${entity}`,
+    // 注意：HTTP 参数是 snake_case 的 page_size
+    { params: { page, page_size: pageSize } },
+  )
+}
+
+export function getArmies(): Promise<Envelope<{ items: ArmyRow[] }>> {
+  return request<{ items: ArmyRow[] }>('/api/v1/armies')
 }
