@@ -1,34 +1,90 @@
 <template>
   <div class="page">
     <h2>排行榜</h2>
-    <p class="page__hint">
-      全服（{{ GLOBAL_LOCATION_ID }}）的部落榜与玩家榜。
-    </p>
 
-    <div class="toolbar">
-      <el-radio-group v-model="kind">
-        <el-radio-button v-for="opt in KIND_OPTIONS" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </el-radio-button>
-      </el-radio-group>
-    </div>
+    <el-tabs v-model="view">
+      <!--
+        实时榜：两套状态与赛季面板完全独立 —— 共用 entity / page / rows 的话，
+        在赛季面板切部落/玩家会把实时榜也重拉一遍，两个 loading 还会互相覆盖。
+      -->
+      <el-tab-pane label="实时榜" name="realtime">
+        <p class="page__hint">全服 · 线上经 RoyaleAPI 代理，约每 6 小时刷新</p>
 
-    <LoadingBlock v-if="loading" />
-    <ErrorCard v-else-if="error" :error="error" @retry="fetchRankings" />
+        <div class="toolbar">
+          <el-radio-group v-model="realtimeEntity">
+            <el-radio-button v-for="opt in ENTITY_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
 
-    <template v-else>
-      <RankingTable :rows="rows" :kind="kind" />
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="pageSize"
-        class="pager"
-        :page-sizes="[20, 50, 100]"
-        :total="total"
-        layout="total, sizes, prev, pager, next"
-        @current-change="fetchRankings"
-        @size-change="onSizeChange"
-      />
-    </template>
+        <LoadingBlock v-if="realtimeLoading" />
+        <ErrorCard v-else-if="realtimeError" :error="realtimeError" @retry="fetchRealtime" />
+
+        <template v-else>
+          <RankingTable :rows="realtimeRows" :entity="realtimeEntity" />
+          <el-pagination
+            v-model:current-page="realtimePage"
+            v-model:page-size="realtimePageSize"
+            class="pager"
+            :page-sizes="[20, 50, 100]"
+            :total="realtimeTotal"
+            layout="total, sizes, prev, pager, next"
+            @current-change="fetchRealtime"
+            @size-change="onRealtimeSizeChange"
+          />
+        </template>
+      </el-tab-pane>
+
+      <!-- 必须 lazy：否则首屏会把两个面板都挂上，白打一次赛季接口。 -->
+      <el-tab-pane label="赛季榜" name="season" lazy>
+        <p class="page__hint">按赛季快照查看历史榜单，数据来自 War Report。</p>
+
+        <div class="toolbar">
+          <el-select
+            v-model="seasonSnapshot"
+            class="season-select"
+            placeholder="选择赛季"
+            :disabled="!seasons.length"
+          >
+            <el-option
+              v-for="s in seasons"
+              :key="s.seasonId"
+              :label="s.seasonId"
+              :value="s.seasonId"
+            />
+          </el-select>
+
+          <el-radio-group v-model="seasonEntity">
+            <el-radio-button v-for="opt in ENTITY_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <LoadingBlock v-if="seasonsLoading || seasonLoading" />
+        <ErrorCard v-else-if="seasonsError" :error="seasonsError" @retry="loadSeasons" />
+        <ErrorCard v-else-if="seasonError" :error="seasonError" @retry="fetchSeason" />
+        <div v-else-if="!seasons.length" class="season-empty">暂无赛季数据</div>
+
+        <template v-else>
+          <RankingTable :rows="seasonRows" :entity="seasonEntity" />
+          <el-pagination
+            v-model:current-page="seasonPage"
+            v-model:page-size="seasonPageSize"
+            class="pager"
+            :page-sizes="[20, 50, 100]"
+            :total="seasonTotal"
+            layout="total, sizes, prev, pager, next"
+            @current-change="fetchSeason"
+            @size-change="onSeasonSizeChange"
+          />
+        </template>
+
+        <!-- 署名固定渲染，空列表也要有 -->
+        <SourceNote class="season-source" />
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -38,59 +94,142 @@ import { onMounted, ref, watch } from 'vue'
 import {
   GLOBAL_LOCATION_ID,
   getRankings,
-  type RankingKind,
+  getWarReportSeasonRankings,
+  getWarReportSeasons,
+  type RankingEntity,
   type RankingRow,
+  type WarReportSeason,
 } from '../api/endpoints'
 import { ApiError } from '../api/request'
 import ErrorCard from '../components/ErrorCard.vue'
 import LoadingBlock from '../components/LoadingBlock.vue'
 import RankingTable from '../components/RankingTable.vue'
+import SourceNote from '../components/SourceNote.vue'
 
-const KIND_OPTIONS: Array<{ value: RankingKind; label: string }> = [
+type RankingView = 'realtime' | 'season'
+
+const ENTITY_OPTIONS: Array<{ value: RankingEntity; label: string }> = [
   { value: 'clans', label: '部落' },
   { value: 'players', label: '玩家' },
 ]
 
-const kind = ref<RankingKind>('clans')
+const view = ref<RankingView>('realtime')
 
-const rows = ref<RankingRow[]>([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
+/* ---- 实时榜 ---- */
+const realtimeEntity = ref<RankingEntity>('clans')
+const realtimeRows = ref<RankingRow[]>([])
+const realtimeTotal = ref(0)
+const realtimePage = ref(1)
+const realtimePageSize = ref(20)
+const realtimeLoading = ref(false)
+const realtimeError = ref<ApiError | null>(null)
 
-const loading = ref(false)
-const error = ref<ApiError | null>(null)
+/* ---- 赛季榜 ---- */
+const seasonEntity = ref<RankingEntity>('clans')
+const seasonRows = ref<RankingRow[]>([])
+const seasonTotal = ref(0)
+const seasonPage = ref(1)
+const seasonPageSize = ref(20)
+const seasonLoading = ref(false)
+const seasonError = ref<ApiError | null>(null)
+
+const seasons = ref<WarReportSeason[]>([])
+/** 当前选中的赛季快照；列表为空时是 null，此时不发榜请求。 */
+const seasonSnapshot = ref<string | null>(null)
+const seasonsLoading = ref(false)
+const seasonsError = ref<ApiError | null>(null)
+/** 赛季列表只在第一次切到赛季面板时拉一次，切来切去不重复请求。 */
+const seasonsLoaded = ref(false)
 
 function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError('UNKNOWN_ERROR', '请求失败', 0)
 }
 
-async function fetchRankings() {
-  loading.value = true
-  error.value = null
+async function fetchRealtime() {
+  realtimeLoading.value = true
+  realtimeError.value = null
   try {
-    const res = await getRankings(kind.value, GLOBAL_LOCATION_ID, page.value, pageSize.value)
-    rows.value = res.data.items
-    total.value = res.data.total
+    const res = await getRankings(
+      realtimeEntity.value,
+      GLOBAL_LOCATION_ID,
+      realtimePage.value,
+      realtimePageSize.value,
+    )
+    realtimeRows.value = res.data.items
+    realtimeTotal.value = res.data.total
   } catch (err) {
-    error.value = toApiError(err)
+    realtimeError.value = toApiError(err)
   } finally {
-    loading.value = false
+    realtimeLoading.value = false
   }
 }
 
-function onSizeChange() {
-  page.value = 1
-  void fetchRankings()
+function onRealtimeSizeChange() {
+  realtimePage.value = 1
+  void fetchRealtime()
 }
 
 // 切榜单类型回到第 1 页重拉
-watch(kind, () => {
-  page.value = 1
-  void fetchRankings()
+watch(realtimeEntity, () => {
+  realtimePage.value = 1
+  void fetchRealtime()
 })
 
-onMounted(fetchRankings)
+async function loadSeasons() {
+  seasonsLoading.value = true
+  seasonsError.value = null
+  try {
+    const res = await getWarReportSeasons()
+    seasons.value = res.data.items
+    seasonSnapshot.value = seasons.value[0]?.seasonId ?? null
+  } catch (err) {
+    seasonsError.value = toApiError(err)
+  } finally {
+    seasonsLoading.value = false
+    seasonsLoaded.value = true
+  }
+}
+
+async function fetchSeason() {
+  // 没有赛季可选时不该发榜请求
+  if (seasonSnapshot.value === null) return
+  seasonLoading.value = true
+  seasonError.value = null
+  try {
+    const res = await getWarReportSeasonRankings(
+      seasonSnapshot.value,
+      seasonEntity.value,
+      seasonPage.value,
+      seasonPageSize.value,
+    )
+    seasonRows.value = res.data.items
+    seasonTotal.value = res.data.total
+  } catch (err) {
+    seasonError.value = toApiError(err)
+  } finally {
+    seasonLoading.value = false
+  }
+}
+
+function onSeasonSizeChange() {
+  seasonPage.value = 1
+  void fetchSeason()
+}
+
+// 换赛季或换部落/玩家都回到第 1 页重拉
+watch([seasonSnapshot, seasonEntity], () => {
+  if (seasonSnapshot.value === null) return
+  seasonPage.value = 1
+  void fetchSeason()
+})
+
+watch(view, (next) => {
+  if (next === 'season' && !seasonsLoaded.value) {
+    void loadSeasons()
+  }
+})
+
+onMounted(fetchRealtime)
 </script>
 
 <style scoped>
@@ -104,5 +243,14 @@ onMounted(fetchRankings)
 .pager {
   margin-top: 16px;
   justify-content: flex-end;
+}
+.season-empty {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.season-source {
+  margin-top: 16px;
 }
 </style>

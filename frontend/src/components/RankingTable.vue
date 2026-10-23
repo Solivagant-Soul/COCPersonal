@@ -37,13 +37,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { RankingKind, RankingMetric, RankingRow } from '../api/endpoints'
+import type { RankingEntity, RankingMetric, RankingRow } from '../api/endpoints'
 import { formatNumber } from '../utils/format'
 
-const props = defineProps<{ rows: RankingRow[]; kind: RankingKind }>()
+const props = defineProps<{ rows: RankingRow[]; entity: RankingEntity }>()
 
 /** 每种榜单看哪些指标 —— 与后端 rankings.py 的 _METRICS_BY_KIND 一致。 */
-const METRIC_COLUMNS: Record<RankingKind, Array<{ label: string; prop: RankingMetric }>> = {
+const METRIC_COLUMNS: Record<RankingEntity, Array<{ label: string; prop: RankingMetric }>> = {
   clans: [
     { label: '积分', prop: 'points' },
     { label: '成员', prop: 'members' },
@@ -55,9 +55,9 @@ const METRIC_COLUMNS: Record<RankingKind, Array<{ label: string; prop: RankingMe
   ],
 }
 
-const PLAYER_KINDS: RankingKind[] = ['players']
+const PLAYER_ENTITIES: RankingEntity[] = ['players']
 
-const metricColumns = computed(() => METRIC_COLUMNS[props.kind] ?? [])
+const metricColumns = computed(() => METRIC_COLUMNS[props.entity] ?? [])
 
 /**
  * 名次梯级：前 1 名 OP、前 3 名 S、4-10 名 A、其余 B。
@@ -96,7 +96,7 @@ function deltaClass(row: RankingRow): string {
 }
 
 function detailRoute(row: RankingRow) {
-  return PLAYER_KINDS.includes(props.kind)
+  return PLAYER_ENTITIES.includes(props.entity)
     ? { name: 'player', params: { tag: row.tag } }
     : { name: 'clan', params: { tag: row.tag } }
 }

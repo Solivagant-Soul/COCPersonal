@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
-import type { RankingRow } from '../api/endpoints'
+import type { RankingEntity, RankingRow } from '../api/endpoints'
 import RankingTable from './RankingTable.vue'
 
 const router = createRouter({
@@ -22,9 +22,9 @@ function row(over: Partial<RankingRow>): RankingRow {
   }
 }
 
-function mountTable(rows: RankingRow[], kind: 'clans' | 'players' = 'clans') {
+function mountTable(rows: RankingRow[], entity: RankingEntity = 'clans') {
   return mount(RankingTable, {
-    props: { rows, kind },
+    props: { rows, entity },
     global: { plugins: [router] },
   })
 }
@@ -90,5 +90,10 @@ describe('RankingTable', () => {
     const player = mountTable([row({ rank: 1 })], 'players')
     expect(player.text()).toContain('奖杯')
     expect(player.text()).not.toContain('成员')
+  })
+
+  it('prop 名是 entity，值域只有 clans / players', () => {
+    const w = mountTable([row({ tag: '#AAA' })], 'players')
+    expect(w.props('entity')).toBe('players')
   })
 })

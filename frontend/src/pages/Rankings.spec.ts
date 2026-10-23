@@ -5,9 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../api/endpoints', () => ({
   GLOBAL_LOCATION_ID: 32000000,
   getRankings: vi.fn(),
+  getWarReportSeasons: vi.fn(),
+  getWarReportSeasonRankings: vi.fn(),
 }))
 
-import { getRankings } from '../api/endpoints'
+import {
+  getRankings,
+  getWarReportSeasonRankings,
+  getWarReportSeasons,
+} from '../api/endpoints'
 import { installElementPlus } from '../plugins/element'
 import Rankings from './Rankings.vue'
 
@@ -39,6 +45,16 @@ const rankingsPage = {
   },
 }
 
+const seasonsPage = {
+  data: {
+    items: [
+      { seasonId: '2026-10-05', players: 200, clans: 200, fetchedAt: null },
+      { seasonId: '2026-09-07', players: 200, clans: 200, fetchedAt: null },
+    ],
+  },
+  meta: rankingsPage.meta,
+}
+
 async function mountRankings() {
   await router.push({ name: 'rankings' })
   await router.isReady()
@@ -51,10 +67,20 @@ async function mountRankings() {
   return w
 }
 
+async function switchToSeason(w: Awaited<ReturnType<typeof mountRankings>>) {
+  const tabs = w.findComponent({ name: 'ElTabs' })
+  await tabs.vm.$emit('update:modelValue', 'season')
+  await flushPromises()
+}
+
 describe('Rankings', () => {
   beforeEach(() => {
     vi.mocked(getRankings).mockReset()
     vi.mocked(getRankings).mockResolvedValue(rankingsPage as never)
+    vi.mocked(getWarReportSeasons).mockReset()
+    vi.mocked(getWarReportSeasonRankings).mockReset()
+    vi.mocked(getWarReportSeasons).mockResolvedValue(seasonsPage as never)
+    vi.mocked(getWarReportSeasonRankings).mockResolvedValue(rankingsPage as never)
   })
 
   it('固定查全服（32000000），不再有地区选择器', async () => {
@@ -123,5 +149,68 @@ describe('Rankings', () => {
     expect(getRankings).toHaveBeenCalledWith('clans', 32000000, 1, 100)
     expect(w.text()).toContain('Reddit Zulu')
     expect(w.text()).not.toContain('查询失败')
+  })
+
+  it('默认停在实时榜，不请求赛季数据', async () => {
+    await mountRankings()
+    expect(getRankings).toHaveBeenCalledWith('clans', 32000000, 1, 20)
+    expect(getWarReportSeasons).not.toHaveBeenCalled()
+  })
+
+  it('切到赛季榜：默认选最新赛季并拉取', async () => {
+    const w = await mountRankings()
+    await switchToSeason(w)
+    expect(getWarReportSeasons).toHaveBeenCalled()
+    expect(getWarReportSeasonRankings).toHaveBeenCalledWith('2026-10-05', 'clans', 1, 20)
+    expect(w.text()).toContain('数据来源：War Report')
+  })
+
+  it('切赛季回到第 1 页并重新拉取', async () => {
+    const w = await mountRankings()
+    await switchToSeason(w)
+    vi.mocked(getWarReportSeasonRankings).mockClear()
+    // 必须按 class 定位：el-pagination 的 layout 含 sizes，自己也会渲染一个
+    // el-select，`findComponent({ name: 'ElSelect' })` 拿到的可能是分页器那个。
+    const select = w.findComponent('.season-select')
+    await select.vm.$emit('update:modelValue', '2026-09-07')
+    await flushPromises()
+    expect(getWarReportSeasonRankings).toHaveBeenCalledWith('2026-09-07', 'clans', 1, 20)
+  })
+
+  it('赛季列表为空时显示空态，不卡在 loading', async () => {
+    vi.mocked(getWarReportSeasons).mockResolvedValue({
+      data: { items: [] },
+      meta: rankingsPage.meta,
+    } as never)
+    const w = await mountRankings()
+    await switchToSeason(w)
+    expect(w.text()).toContain('暂无赛季数据')
+    // LoadingBlock 用的是 skeleton、没有「加载中」字样，所以断言 DOM 而不是文案
+    expect(w.find('.loading-block').exists()).toBe(false)
+  })
+
+  it('切回实时榜再切回来，不重复请求赛季列表', async () => {
+    const w = await mountRankings()
+    await switchToSeason(w)
+    const tabs = w.findComponent({ name: 'ElTabs' })
+    await tabs.vm.$emit('update:modelValue', 'realtime')
+    await flushPromises()
+    await switchToSeason(w)
+    expect(getWarReportSeasons).toHaveBeenCalledTimes(1)
+  })
+
+  it('赛季榜切部落/玩家只重拉赛季榜，不碰实时榜', async () => {
+    const w = await mountRankings()
+    await switchToSeason(w)
+    vi.mocked(getRankings).mockClear()
+    vi.mocked(getWarReportSeasonRankings).mockClear()
+
+    // 第一个 radio group 在实时面板（非 lazy，切走后仍留在 DOM 里），第二个才是赛季的
+    const groups = w.findAllComponents({ name: 'ElRadioGroup' })
+    await groups[1].setValue('players')
+    await flushPromises()
+
+    expect(getWarReportSeasonRankings).toHaveBeenCalledWith('2026-10-05', 'players', 1, 20)
+    expect(getRankings).not.toHaveBeenCalled()
   })
 })
