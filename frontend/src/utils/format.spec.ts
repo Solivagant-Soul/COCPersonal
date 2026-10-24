@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   enumLabel,
+  formatBeijingTime,
   formatCompact,
   formatNumber,
   formatRelativeTime,
@@ -77,6 +78,25 @@ describe('formatRelativeTime', () => {
   it('缺失/非法时间返回 -', () => {
     expect(formatRelativeTime(null, Date.now())).toBe('-')
     expect(formatRelativeTime('not-a-date', Date.now())).toBe('-')
+  })
+})
+
+describe('formatBeijingTime', () => {
+  it('UTC 串换算成北京时间（+8），定宽到分钟', () => {
+    expect(formatBeijingTime('2026-01-01T00:00:00Z')).toBe('2026-01-01 08:00')
+    expect(formatBeijingTime('2026-10-23T20:23:11Z')).toBe('2026-10-24 04:23')
+  })
+
+  it('跨年/跨月不靠字符串截断', () => {
+    // 2025-12-31T16:00Z 已经是北京时间 2026-01-01 00:00
+    expect(formatBeijingTime('2025-12-31T16:00:00Z')).toBe('2026-01-01 00:00')
+  })
+
+  it('缺失/非法时间返回 -', () => {
+    expect(formatBeijingTime(null)).toBe('-')
+    expect(formatBeijingTime(undefined)).toBe('-')
+    expect(formatBeijingTime('')).toBe('-')
+    expect(formatBeijingTime('not-a-date')).toBe('-')
   })
 })
 

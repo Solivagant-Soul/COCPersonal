@@ -112,6 +112,27 @@ export function formatRelativeTime(
   return Math.floor(diff / DAY) + ' 天前'
 }
 
+/**
+ * UTC ISO 串 → 北京时间（UTC+8）的 `YYYY-MM-DD HH:mm`；解析不了返回 `'-'`。
+ *
+ * 时区**写死** utc+8，而不是跟着浏览器走：
+ *   - 站点受众是大陆用户，他们要看的是自己钟表上的时间；
+ *   - 写死才能让测试在任何时区（含 CI 的 UTC）给出同一串。
+ * 中国无夏令时，固定偏移即精确。不用 `toLocaleString`：它的输出随 ICU 版本、
+ * 语言环境、`hour12` 对午夜的写法漂移，测试会变成环境依赖。
+ */
+export function formatBeijingTime(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined || value === '') return PLACEHOLDER
+  const t = value instanceof Date ? value.getTime() : Date.parse(String(value))
+  if (!Number.isFinite(t)) return PLACEHOLDER
+  const d = new Date(t + 8 * HOUR)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}` +
+    ` ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+  )
+}
+
 // 与后端 app/coc/tags.py 的 _TAG_RE 对齐：#? + 3–10 位字母数字
 const TAG_RE = /^[0-9A-Z]{3,10}$/
 const FULLWIDTH_HASH = /\uFF03/g

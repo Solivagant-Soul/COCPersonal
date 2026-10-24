@@ -95,6 +95,24 @@ describe('Rankings', () => {
     expect(w.find('.toolbar__select').exists()).toBe(false)
   })
 
+  it('实时榜显示 meta.fetchedAt（北京时间），这是「榜单多久以前抓的」', async () => {
+    const w = await mountRankings()
+
+    // 夹具 fetchedAt 是 2026-01-01T00:00:00Z → 北京时间 08:00
+    expect(w.text()).toContain('数据更新于 2026-01-01 08:00')
+  })
+
+  it('后端没给 fetchedAt 时不显示半截文案', async () => {
+    vi.mocked(getRankings).mockResolvedValue({
+      ...rankingsPage,
+      meta: { ...rankingsPage.meta, fetchedAt: null },
+    } as never)
+
+    const w = await mountRankings()
+
+    expect(w.text()).not.toContain('数据更新于')
+  })
+
   it('分页文案是中文，不是 Element Plus 默认的 Total / page', async () => {
     const w = await mountRankings()
 

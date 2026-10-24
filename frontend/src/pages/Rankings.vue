@@ -8,7 +8,12 @@
         在赛季面板切部落/玩家会把实时榜也重拉一遍，两个 loading 还会互相覆盖。
       -->
       <el-tab-pane label="实时榜" name="realtime">
-        <p class="page__hint">全服 · 线上经 RoyaleAPI 代理，约每 6 小时刷新</p>
+        <p class="page__hint">
+          全服 · 线上经 RoyaleAPI 代理，约每 6 小时刷新
+          <span v-if="realtimeFetchedAt" class="page__stamp">
+            数据更新于 {{ formatBeijingTime(realtimeFetchedAt) }}
+          </span>
+        </p>
 
         <div class="toolbar">
           <el-radio-group v-model="realtimeEntity">
@@ -105,6 +110,7 @@ import ErrorCard from '../components/ErrorCard.vue'
 import LoadingBlock from '../components/LoadingBlock.vue'
 import RankingTable from '../components/RankingTable.vue'
 import SourceNote from '../components/SourceNote.vue'
+import { formatBeijingTime } from '../utils/format'
 
 type RankingView = 'realtime' | 'season'
 
@@ -123,6 +129,8 @@ const realtimePage = ref(1)
 const realtimePageSize = ref(20)
 const realtimeLoading = ref(false)
 const realtimeError = ref<ApiError | null>(null)
+/** 这批实时榜数据的抓取时间（`meta.fetchedAt`）。null = 还不知道，不显示。 */
+const realtimeFetchedAt = ref<string | null>(null)
 
 /* ---- 赛季榜 ---- */
 const seasonEntity = ref<RankingEntity>('clans')
@@ -157,6 +165,9 @@ async function fetchRealtime() {
     )
     realtimeRows.value = res.data.items
     realtimeTotal.value = res.data.total
+    // 契约 §6.2 要求实时榜显示 meta.fetchedAt：这是「榜单多久以前抓的」，
+    // 与提示里的「约每 6 小时」配合，用户才知道现在看的是不是旧数。
+    realtimeFetchedAt.value = res.meta.fetchedAt
   } catch (err) {
     realtimeError.value = toApiError(err)
   } finally {
@@ -243,6 +254,13 @@ onMounted(fetchRealtime)
 .pager {
   margin-top: 16px;
   justify-content: flex-end;
+}
+/* 抓取时间：比提示语更弱一档，不跟正文抢注意力 */
+.page__stamp {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--text-faint);
+  font-size: 12px;
 }
 .season-empty {
   padding: 48px 0;
