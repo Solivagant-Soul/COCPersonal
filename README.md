@@ -59,8 +59,8 @@ npm run dev                        # http://localhost:5173（/api 已反代到 :
 ### 测试与构建
 
 ```powershell
-cd backend;  python -m pytest -q     # 615 passed
-cd frontend; npm run test            # 86 passed（Vitest）
+cd backend;  python -m pytest -q     # 623 passed
+cd frontend; npm run test            # 89 passed（Vitest）
 cd frontend; npm run build           # vue-tsc 类型检查 + 产物到 frontend/dist/
 ```
 

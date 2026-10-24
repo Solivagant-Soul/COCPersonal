@@ -17,14 +17,14 @@
 
 ```powershell
 # 后端（backend/ 下）
-python -m pytest -q                                  # 全量 615 个测试
+python -m pytest -q                                  # 全量 623 个测试
 python -m uvicorn app.main:app --reload --port 8000  # 起服务（需 backend/.env）
 alembic upgrade head                                 # 建表（测试会自动跑，一般无需手动）
 python -m app.cli seed-dev-rankings                  # 灌夹具排行（无 Token 时排行榜才有数据）
 python -m app.cli import-game-data                   # 升级数据，应产出 2073 行
 
 # 前端（frontend/ 下）
-npm run test      # Vitest，86 个
+npm run test      # Vitest，89 个
 npm run build     # vue-tsc 类型检查 + 产物到 dist/
 npm run dev       # :5173，/api 已反代到 :8000
 ```
