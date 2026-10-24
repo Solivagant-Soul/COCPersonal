@@ -33,10 +33,13 @@ class FakeWarReport:
     def __init__(self, snapshots, fail=()):
         self.snapshots = set(snapshots)
         self.fail = set(fail)
+        #: 探测阶段实际问过的赛季日期（按顺序）。用来验证锚点没被别的 scope 带偏。
+        self.probed: list[str] = []
 
     async def get_json(self, path, params=None):
         if path.endswith("/players/countries"):
             season = params["season"]
+            self.probed.append(season)
             if season not in self.snapshots:
                 raise WarReportSnapshotNotFound("snapshot not found")
             return []
@@ -109,6 +112,32 @@ async def test_second_run_replaces_instead_of_duplicating(session):
     assert (await session.execute(
         select(func.count()).select_from(WarReportArmy)
     )).scalar_one() == 1
+
+
+async def test_foreign_scope_seasons_are_not_used_as_the_probe_anchor(session):
+    """别的 scope 写进同一个 kind 的 ``season_id`` 不是「我们采过的快照」。
+
+    不钉 ``location_id`` 时，这种行会混进 ``known``：``max()`` 直接变成那个假日期，
+    探测从它开始算，最后还会被当成真快照去拉榜 —— 库里凭空长出一季不存在的榜单。
+    """
+    session.add(Ranking(
+        kind=str(RankingKind.wr_season_players), location_id=1,
+        season_id="2026-12-01", rank=1, tag="#X", name="X",
+        trophies=1, exp_level=1, fetched_at=NOW,
+    ))
+    await session.commit()
+
+    fake = FakeWarReport({TODAY})
+    result = await collect_warreport(fake, session, now=NOW)
+
+    assert result["items_failed"] == 0
+    assert "2026-12-01" not in fake.probed
+    ghost = (await session.execute(
+        select(func.count()).select_from(Ranking).where(
+            Ranking.location_id == 32000000, Ranking.season_id == "2026-12-01"
+        )
+    )).scalar_one()
+    assert ghost == 0
 
 
 async def test_partial_failure_keeps_other_scopes(session):

@@ -113,3 +113,48 @@ async def test_page_beyond_last_is_empty_200(client, boards):
     )
     assert resp.status_code == 200
     assert resp.json()["data"]["items"] == []
+
+
+async def _add_foreign_scope_rows(session, count: int, name_prefix: str):
+    """往同一个 ``(kind, season_id)`` 里塞另一个地区的行。
+
+    这是"另一个写入方"的最小复现：换 scope 的采集脚本、手工补数、以后加的地区榜，
+    都会落在同一个 ``wr_season_players`` 下。
+    """
+    now = dt.datetime.now(UTC)
+    session.add_all([
+        Ranking(
+            kind=str(RankingKind.wr_season_players), location_id=1,
+            season_id=S1, rank=rank, tag=f"#{name_prefix}{rank}",
+            name=f"{name_prefix}{rank}", trophies=1, exp_level=1, fetched_at=now,
+        )
+        for rank in range(1, count + 1)
+    ])
+    await session.commit()
+
+
+async def test_season_board_only_reads_the_global_scope(client, boards, session):
+    """``(kind, season_id)`` 不是唯一 scope —— 榜必须钉住全服。
+
+    不钉的话：``total`` 变成 60 + N，``rank`` 在各自 scope 内编号，第 2 页会
+    出现两条 rank=21。用户看到的是"这一季多了一倍人"，而接口一切正常。
+    """
+    await _add_foreign_scope_rows(session, 2, "OTHER")
+
+    resp = await client.get(
+        f"/api/v1/rankings/warreport/seasons/{S1}/players?page_size=100"
+    )
+    data = resp.json()["data"]
+    assert data["total"] == 60
+    # page_size 上限 50：只校验拿到的是全服那 50 条，别的 scope 一条都不能露头
+    assert len(data["items"]) == 50
+    assert not any(row["name"].startswith("OTHER") for row in data["items"])
+
+
+async def test_season_counts_only_read_the_global_scope(client, boards, session):
+    """赛季列表的条数同理：混进别的 scope 会让 players 计数翻倍。"""
+    await _add_foreign_scope_rows(session, 3, "OTHER")
+
+    items = (await client.get("/api/v1/rankings/warreport/seasons")).json()["data"]["items"]
+    assert items[0]["seasonId"] == S1
+    assert items[0]["players"] == 60

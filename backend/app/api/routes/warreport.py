@@ -28,6 +28,7 @@ from sqlalchemy import func, select
 
 from app.api.routes.rankings import fresh_meta, ranking_out
 from app.api.schemas import DEFAULT_PAGE_SIZE, DataOut, clamp_page_size
+from app.collector.jobs.warreport import GLOBAL_LOCATION_ID
 from app.collector.rankings_service import RankingKind
 from app.db.models import Ranking, WarReportArmy
 
@@ -98,7 +99,13 @@ async def list_warreport_seasons():
                     func.count(),
                     func.max(Ranking.fetched_at),
                 )
-                .where(Ranking.kind.in_(kinds))
+                # ``location_id`` 必须钉住：``(kind, season_id)`` 并不是唯一 scope。
+                # 换 scope 的采集脚本或手工补数一旦写进同一个 kind，条数会翻倍
+                # （页面上表现为"这一季怎么多了一倍人"），而且没有任何报错。
+                .where(
+                    Ranking.kind.in_(kinds),
+                    Ranking.location_id == GLOBAL_LOCATION_ID,
+                )
                 .group_by(Ranking.season_id, Ranking.kind)
             )
         ).all()
@@ -159,11 +166,15 @@ async def warreport_season_board(
     limit = clamp_page_size(page_size)
     session = await _session()
     try:
-        # scope 就是（kind, snapshot）：采集侧这两类榜的 location_id 恒为全服，
-        # 按 location 过滤只会多一处需要同步的隐含约定。
-        base = select(Ranking).where(
-            Ranking.kind == str(ranking_kind), Ranking.season_id == snapshot
+        # scope 是（kind, location_id, snapshot）—— 与采集侧写入的 scope 一致。
+        # ``(kind, snapshot)`` 不唯一：别的 scope 的行混进来会让 total 变大、
+        # 名次串台（``rank`` 在各自 scope 内编号）。
+        scope = (
+            Ranking.kind == str(ranking_kind),
+            Ranking.location_id == GLOBAL_LOCATION_ID,
+            Ranking.season_id == snapshot,
         )
+        base = select(Ranking).where(*scope)
         total = (
             await session.execute(select(func.count()).select_from(base.subquery()))
         ).scalar_one()
@@ -174,10 +185,7 @@ async def warreport_season_board(
         ).scalars().all()
         latest = (
             await session.execute(
-                select(func.max(Ranking.fetched_at)).where(
-                    Ranking.kind == str(ranking_kind),
-                    Ranking.season_id == snapshot,
-                )
+                select(func.max(Ranking.fetched_at)).where(*scope)
             )
         ).scalar_one()
     finally:

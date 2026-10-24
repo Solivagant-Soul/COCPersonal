@@ -73,11 +73,14 @@ async def collect_warreport(
     # 库里的快照日期只作探测锚点：discover_snapshots 会自己合并新探到的日期、
     # 也会在锚点不可信时回退逐日回溯。``IS NOT NULL`` 不能省 —— 同一个 kind
     # 若哪天混进别的 scope，NULL 会让 ``known[0]`` 变成一个没意义的锚点。
+    # ``location_id`` 同理必须钉住：别的 scope 的 ``season_id`` 不是"我们采过的
+    # 快照"，拿它当锚点会把探测起点带偏。
     known = (
         await session.execute(
             select(Ranking.season_id)
             .where(
                 Ranking.kind.in_([str(kind) for kind in _SNAPSHOT_KINDS]),
+                Ranking.location_id == GLOBAL_LOCATION_ID,
                 Ranking.season_id.is_not(None),
             )
             .distinct()
