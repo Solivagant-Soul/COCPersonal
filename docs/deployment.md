@@ -644,7 +644,7 @@ docker compose exec api alembic upgrade head
 | https 站点报 TLS 握手失败 | 容器内没有 443 server 块（或 `deploy/nginx.conf` 里 443 段还注释着）——把 https 流量转到容器的 80 端口，nginx 会用明文应答。见 §9 |
 | **api `unhealthy` + 日志 `password authentication failed for user "coc"`** | `.env` 的密码改了，但**库里的角色密码在数据卷初始化时就冻结了** → 必须 `ALTER USER` 同步（见 §2 陷阱） |
 | 大量 429 | 真实客户端超 60 次/分；`X-Forwarded-For` 已透传，问题多半在共享出口 IP；临时下调 `RATE_LIMIT_PER_MINUTE` 需重启 api |
-| 排行榜空 | 夹具模式没跑 §5；真实模式 `meta/freshness` 看采集时间和 `collectorRuns` |
+| 排行榜空 | 夹具模式没跑 §5；真实模式 `meta/freshness` 看采集时间和 `collectorRuns`，补采命令见 §12.3 |
 | 磁盘满 | `backup.sh` 未设时备份会吃满磁盘——恢复它或手动清理（磁盘满的表象是"服务正常但数据不再更新"） |
 
 ## 12. War Report 数据源与署名
@@ -664,6 +664,13 @@ docker compose exec api alembic upgrade head
 
 - 采集 job 名 `warreport`，**每天 `04:23 UTC` 一次**（cron `23 4 * * *`，错开整点）。
   上游快照 28 天才出一份，每天一次已经足够。
+- **启动时会自动补一次**（`app/collector/catchup.py`，挂在 `register_jobs` 的
+  `startup_catchup` 一次性任务上）：某个 job 最近一次运行超过自己的周期，或最近一次
+  不是 `success`（含卡在 `running` 的崩溃残留），就补跑一轮；失败后 5 分钟内不重复补，
+  避免崩溃重启连环打上游。
+  **这台服务器不是 7×24 在线时必须有这层**：cron 会在关机时段静默错过 —— 尤其
+  `warreport` 的 04:23 UTC（北京 12:23），错过一次就等第二天，页面表现为「一直空」
+  而调度器和接口全都正常。
 - 调度器与 API **同进程**：`APP_ROLE=all`（默认）或 `collector` 才会跑；`api` 角色不跑
   调度器（多起一个只是白跑）。角色门控见 `backend/app/collector/scheduler.py`。
 - 对外路由（`/api/v1/rankings/warreport/...`、`/api/v1/armies`）**只读库、绝不回源**，
@@ -688,6 +695,14 @@ docker compose exec api alembic upgrade head
 ### 12.3 验证
 
 ```bash
+# 空库先灌维表：rankings 只采 locations 里已有的地区（全服 32000000），
+# 维表为空时 rankings 会以 success 收场却一行都不写。
+docker compose exec api python -m app.cli collect static_data
+
+# 实时榜（官方 API；需要有效 Token，走代理时还要把代理 IP 加进 Allowed IP）
+docker compose exec api python -m app.cli collect rankings
+
+# 赛季榜 + 阵容（第三方 War Report，无需 Token）
 docker compose exec api python -m app.cli collect warreport
 # 期望：采集 job warreport -> success (ok=7 failed=0)
 # ok 数的是**成功的 scope**（3 个快照 × 玩家/部落两类榜 + 阵容 = 7），不是行数。

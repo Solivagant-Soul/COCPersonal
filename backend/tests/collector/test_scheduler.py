@@ -133,6 +133,24 @@ def test_schedule_spec_jitter_fits_inside_the_interval():
         assert seconds > 60, f"{name} 的 interval_seconds={seconds} 太小"
 
 
+async def test_register_jobs_schedules_a_startup_catchup():
+    """启动时必须挂一个一次性的补齐任务。
+
+    这台服务器只在晚上开机，``warreport`` 的 04:23 UTC 永远不会触发 ——
+    没有启动补齐，页面就一直是空的，而调度器看起来一切正常。
+    """
+    from apscheduler.triggers.date import DateTrigger
+
+    from app.collector.scheduler import register_jobs
+
+    collector = build_scheduler(_settings("all"))
+    register_jobs(collector)
+
+    job = collector.scheduler.get_job("startup_catchup")
+    assert job is not None
+    assert isinstance(job.trigger, DateTrigger)
+
+
 # --------------------------------------------------------------------------- #
 # 架构边界
 # --------------------------------------------------------------------------- #

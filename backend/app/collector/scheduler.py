@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from dataclasses import dataclass
 
@@ -103,4 +104,29 @@ def register_jobs(collector: CollectorScheduler) -> CollectorScheduler:
             coalesce=True,
         )
         logger.info("job %s scheduled: cron=%s interval=%ss", name, cron, interval)
+
+    # 启动时补一次「过期了就补跑」：cron 型任务在只在晚上开机的机器上会
+    # 长期错过触发（``warreport`` 尤其明显）。判定规则与冷却见 catchup.py。
+    # 放在 register_jobs 里而不是 lifespan 里：lifespan 的测试会把
+    # register_jobs 整个替换掉，这样单测不会真的去打上游。
+    from app.collector.catchup import run_catchup
+
+    async def _catch_up() -> None:
+        from app.db.session import async_sessionmaker
+
+        async with async_sessionmaker() as session:
+            await run_catchup(session)
+
+    collector.scheduler.add_job(
+        _catch_up,
+        trigger="date",
+        # 给 1 秒缓冲：add_job 发生在 start() 之前，立即到期的任务在某些
+        # 平台上会被当成 misfire（默认宽限只有 1 秒）。
+        run_date=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=1),
+        id="startup_catchup",
+        name="startup_catchup",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+    logger.info("启动补齐已排入队列（一次性，立即执行）")
     return collector
