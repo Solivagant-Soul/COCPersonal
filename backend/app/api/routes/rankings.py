@@ -159,7 +159,9 @@ async def _ranking_page(
         ).scalar_one()
         rows = (
             await session.execute(
-                base.order_by(Ranking.rank)
+                # 名次可能重复（唯一约束键是 tag）：补 tag 让分页顺序确定，
+                # 否则同名的两行在 OFFSET 分页下会重复出现或漏掉。
+                base.order_by(Ranking.rank, Ranking.tag)
                 .offset((page - 1) * limit)
                 .limit(limit)
             )
@@ -232,7 +234,9 @@ async def season_rankings(
         ).scalar_one()
         rows = (
             await session.execute(
-                base.order_by(Ranking.rank).offset((page - 1) * limit).limit(limit)
+                base.order_by(Ranking.rank, Ranking.tag)
+                .offset((page - 1) * limit)
+                .limit(limit)
             )
         ).scalars().all()
         latest = (

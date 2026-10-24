@@ -117,6 +117,35 @@ async def test_page_beyond_last_is_empty_200(client, boards):
     assert resp.json()["data"]["items"] == []
 
 
+async def test_season_board_order_is_deterministic_across_pages(client, boards, session):
+    """``rank`` 可能重复（唯一约束键是 tag），分页必须有确定的第二排序键。
+
+    只按 rank 排时，同名的两行在 OFFSET 分页下会重复出现或整条漏掉 ——
+    用户翻到第 2 页看见第 1 页的人，而另一个人永远看不到。
+    """
+    session.add_all([
+        Ranking(
+            # 用一个 fixture 里没有的赛季：否则 rank=1 早被 P1 占了，
+            # 分页断言就变成在同名次里挑，看不出排序键
+            kind=str(RankingKind.wr_season_players), location_id=GLOBAL,
+            season_id="2026-08-10", rank=1, tag=f"#{tag}", name=tag,
+            trophies=1, exp_level=1, fetched_at=dt.datetime.now(UTC),
+        )
+        for tag in ("TIE_B", "TIE_A")
+    ])
+    await session.commit()
+
+    first = (await client.get(
+        "/api/v1/rankings/warreport/seasons/2026-08-10/players?page=1&page_size=1"
+    )).json()["data"]["items"]
+    second = (await client.get(
+        "/api/v1/rankings/warreport/seasons/2026-08-10/players?page=2&page_size=1"
+    )).json()["data"]["items"]
+
+    # 两页拿到的不是同一条（重复），而且按 (rank, tag) 稳定排序
+    assert [row["tag"] for row in first + second] == ["#TIE_A", "#TIE_B"]
+
+
 async def _add_foreign_scope_rows(session, count: int, name_prefix: str):
     """往同一个 ``(kind, season_id)`` 里塞另一个地区的行。
 

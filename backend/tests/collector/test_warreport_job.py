@@ -266,6 +266,98 @@ async def test_unmappable_armies_response_fails_and_keeps_old_rows(session):
     assert [row.canonical_key for row in rows] == ["k1"]
 
 
+async def test_unmappable_season_board_fails_and_keeps_old_rows(session):
+    """非空的赛季榜响应里没有一行能映射 → 该 scope 失败，旧数据保留。
+
+    这是配兵那条守卫的姊妹坑：上游把 ``tag`` 改名后 mapper 会丢掉每一行，
+    照常替换就是「DELETE 该 scope + INSERT 0 行」—— 榜空了、采集记 success，
+    连这一季都会从 ``/rankings/warreport/seasons`` 里消失（那个列表按这些行聚合）。
+    """
+    await collect_warreport(FakeWarReport({TODAY}), session, now=NOW)
+    before = (await session.execute(
+        select(func.count()).select_from(Ranking)
+    )).scalar_one()
+    assert before == 2  # players + clans
+
+    class RenamedFields(FakeWarReport):
+        async def get_json(self, path, params=None):
+            if path.endswith("/rankings/players"):
+                # 名次还在，但 tag 没了 → player_item 返回 None
+                return [{"name": "P1", "rank": 1}, {"name": "P2", "rank": 2}]
+            return await super().get_json(path, params)
+
+    result = await collect_warreport(RenamedFields({TODAY}), session, now=NOW)
+
+    # players 那个 scope 失败，clans 与配兵照常成功
+    assert result["items_failed"] == 1
+    assert "2 条" in str(result["detail"])
+    rows = (await session.execute(
+        select(Ranking).where(Ranking.kind == str(RankingKind.wr_season_players))
+    )).scalars().all()
+    assert [row.tag for row in rows] == ["#P1"]
+
+
+async def test_stale_anchor_with_no_snapshot_is_logged(session):
+    """库里有赛季却一个也探不到时，必须留一行 WARNING。
+
+    这种轮次仍然是 success（阵容照常刷），但赛季榜会**永远**停在旧数据 ——
+    没有日志的话，只有用户发现页面不更新才会被注意到。
+
+    用自己挂的 handler 而不是 ``caplog``：本仓库的 pytest-asyncio 装配下，
+    ``caplog`` **抓不到在 await 里打出的日志**（实测 caplog.text 恒为空，
+    同样的 logger 在同步用例里却能抓到），用它只会写出一条永远失败的假测试。
+    """
+    import logging
+
+    class ListHandler(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.records: list[logging.LogRecord] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.records.append(record)
+
+    class StaleAnchor(FakeWarReport):
+        async def get_json(self, path, params=None):
+            if path.endswith("/players/countries"):
+                self.probed.append(params["season"])
+                raise WarReportSnapshotNotFound("snapshot not found")
+            return await super().get_json(path, params)
+
+    # 先把库里灌成一个"很久以前的快照"（超过 FALLBACK_AFTER_DAYS），
+    # 让 discover_snapshots 走逐日回溯分支，而回溯窗口里一个都探不到。
+    old = (NOW.date() - dt.timedelta(days=60)).isoformat()
+    session.add(Ranking(
+        kind=str(RankingKind.wr_season_players), location_id=32000000,
+        season_id=old, rank=1, tag="#OLD", name="OLD",
+        trophies=1, exp_level=1, fetched_at=NOW,
+    ))
+    await session.commit()
+
+    handler = ListHandler()
+    job_logger = logging.getLogger("coc.collector.warreport")
+    previous_level = job_logger.level
+    # **必须显式打开**：conftest 的 session fixture 会用 alembic `command.upgrade()`，
+    # 而 alembic 读 alembic.ini 时走 `logging.config.fileConfig(...)`，其默认
+    # `disable_existing_loggers=True` 会把**已经存在**的 logger 全部 disable 掉
+    # （包括本模块的 logger）。不恢复的话，这里一条记录都收不到，测试永远绿不了。
+    previous_disabled = job_logger.disabled
+    job_logger.disabled = False
+    job_logger.addHandler(handler)
+    job_logger.setLevel(logging.WARNING)
+    try:
+        result = await collect_warreport(StaleAnchor(set()), session, now=NOW)
+    finally:
+        job_logger.removeHandler(handler)
+        job_logger.setLevel(previous_level)
+        job_logger.disabled = previous_disabled
+
+    assert result["items_failed"] == 0
+    assert any("没探到任何快照" in record.getMessage() for record in handler.records), [
+        record.getMessage() for record in handler.records
+    ]
+
+
 async def test_army_positions_stay_contiguous_after_filtering_and_dedup(session):
     """脏行与重复 key 都不能在 position 上留空洞，也不能让整次替换失败。"""
 

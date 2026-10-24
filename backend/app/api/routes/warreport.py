@@ -26,9 +26,8 @@ import re
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
-from app.api.routes.rankings import fresh_meta, ranking_out
+from app.api.routes.rankings import DEFAULT_LOCATION_ID, fresh_meta, ranking_out
 from app.api.schemas import DEFAULT_PAGE_SIZE, DataOut, clamp_page_size
-from app.collector.jobs.warreport import GLOBAL_LOCATION_ID
 from app.collector.rankings_service import RankingKind
 from app.db.models import Ranking, WarReportArmy
 
@@ -121,7 +120,7 @@ async def list_warreport_seasons():
                 # （页面上表现为"这一季怎么多了一倍人"），而且没有任何报错。
                 .where(
                     Ranking.kind.in_(kinds),
-                    Ranking.location_id == GLOBAL_LOCATION_ID,
+                    Ranking.location_id == DEFAULT_LOCATION_ID,
                 )
                 .group_by(Ranking.season_id, Ranking.kind)
             )
@@ -190,7 +189,7 @@ async def warreport_season_board(
         # 名次串台（``rank`` 在各自 scope 内编号）。
         scope = (
             Ranking.kind == str(ranking_kind),
-            Ranking.location_id == GLOBAL_LOCATION_ID,
+            Ranking.location_id == DEFAULT_LOCATION_ID,
             Ranking.season_id == snapshot,
         )
         base = select(Ranking).where(*scope)
@@ -199,7 +198,12 @@ async def warreport_season_board(
         ).scalar_one()
         rows = (
             await session.execute(
-                base.order_by(Ranking.rank).offset((page - 1) * limit).limit(limit)
+                # ``rank`` 不唯一（唯一约束键是 tag），上游还会给重复/脏名次。
+                # 只按 rank 排时，同名的两行在 OFFSET 分页下可能重复出现或整条漏掉；
+                # 补 tag 让顺序确定。
+                base.order_by(Ranking.rank, Ranking.tag)
+                .offset((page - 1) * limit)
+                .limit(limit)
             )
         ).scalars().all()
         latest = (

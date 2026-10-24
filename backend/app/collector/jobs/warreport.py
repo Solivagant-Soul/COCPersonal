@@ -34,7 +34,7 @@ from app.collector.rankings_service import RankingKind, replace_rankings
 from app.db.models import Ranking, WarReportArmy
 from app.warreport.client import WarReportClient
 from app.warreport.mappers import army_row, clan_item, player_item
-from app.warreport.snapshots import discover_snapshots
+from app.warreport.snapshots import FIRST_RUN_LOOKBACK_DAYS, discover_snapshots
 
 logger = logging.getLogger("coc.collector.warreport")
 
@@ -92,6 +92,18 @@ async def collect_warreport(
     # 吞掉会以"0 个 scope"收场，看起来就像"今天没有新快照"。
     snapshots = await discover_snapshots(client, list(known), now.date())
 
+    if not snapshots and known:
+        # 库里有赛季却一个也探不到：不是新部署（那时 known 为空），而是上游改了
+        # 节奏/删了快照。此时整轮仍是 success（阵容照常刷），赛季榜会**永远**
+        # 停在旧数据 —— 不留一行日志的话，只有用户发现页面没更新才会被注意到。
+        logger.warning(
+            "warreport 的锚点已过期（最新已知赛季 %s），且过去 %s 天也没探到任何快照"
+            "（库里有 %d 个已知赛季）；赛季榜会停在旧数据，请检查上游节奏",
+            known[0],
+            FIRST_RUN_LOOKBACK_DAYS,
+            len(known),
+        )
+
     ok = 0
     failed = 0
     failures: list[str] = []
@@ -113,6 +125,17 @@ async def collect_warreport(
                     )
                     if item is not None
                 ]
+                if raw and not items:
+                    # 与配兵同一个坑：上游改名（``tag`` → ``playerTag``）会让 mapper
+                    # 把**每一行**都丢掉。照常往下走就是「DELETE 该 scope + INSERT 0 行」，
+                    # 榜单被静默清空、collector_runs 记 success，连这一季都会从
+                    # ``/rankings/warreport/seasons`` 里消失（那个列表就是按这些行聚合的）。
+                    # 空列表仍是合法的上游状态（照常清空）。
+                    raise ValueError(
+                        f"{path}?season={snapshot} 返回 {len(raw)} 条，但没有一条能"
+                        "映射成榜单行（多半是上游字段改名）；已放弃该 scope 的替换，"
+                        "旧数据保留"
+                    )
                 written = await replace_rankings(
                     session,
                     kind,
