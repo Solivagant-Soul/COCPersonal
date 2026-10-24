@@ -17,7 +17,7 @@
 
 ```powershell
 # 后端（backend/ 下）
-python -m pytest -q                                  # 全量 628 个测试
+python -m pytest -q                                  # 全量 639 个测试
 python -m uvicorn app.main:app --reload --port 8000  # 起服务（需 backend/.env）
 alembic upgrade head                                 # 建表（测试会自动跑，一般无需手动）
 python -m app.cli seed-dev-rankings                  # 灌夹具排行（无 Token 时排行榜才有数据）
