@@ -55,7 +55,32 @@ describe('Armies', () => {
     expect(w.text()).toContain('Thrower')
     expect(w.text()).toContain('27.3%')
     expect(w.text()).toContain('2.73')
+    // 其余关键指标也钉住：只测名字与百分比时，把 使用次数/玩家数/摧毁率 接到
+    // 错误字段上一样能过
+    expect(w.text()).toContain('332')
+    expect(w.text()).toContain('54')
+    expect(w.text()).toContain('97.25')
     expect(w.text()).toContain('数据来源：War Report')
+  })
+
+  it('每张卡的复制按钮有自己的无障碍名（不是一排同名按钮）', async () => {
+    const second = { ...army, position: 2, name: 'Super Bowler', canonicalKey: 'k2' }
+    vi.mocked(getArmies).mockResolvedValue({
+      ...page,
+      data: { items: [army, second] },
+    } as never)
+
+    const w = mountArmies()
+    await flushPromises()
+
+    const buttons = w.findAll('.army-card__copy')
+    expect(buttons).toHaveLength(2)
+    // 屏幕阅读器里一排"复制阵型链接"分不出是哪张卡
+    expect(buttons[0].attributes('aria-label')).toContain('Thrower')
+    expect(buttons[1].attributes('aria-label')).toContain('Super Bowler')
+    expect(buttons[0].attributes('aria-label')).not.toBe(
+      buttons[1].attributes('aria-label'),
+    )
   })
 
   it('空数据显示空态', async () => {
@@ -121,7 +146,7 @@ describe('Armies', () => {
     await flushPromises()
     await w.find('.army-card__copy').trigger('click')
     await flushPromises()
-    expect(open).toHaveBeenCalledWith(army.armyLink, '_blank')
+    expect(open).toHaveBeenCalledWith(army.armyLink, '_blank', 'noopener')
   })
 
   it('写剪贴板被拒时同样退化成打开链接', async () => {
@@ -134,6 +159,6 @@ describe('Armies', () => {
     await flushPromises()
     await w.find('.army-card__copy').trigger('click')
     await flushPromises()
-    expect(open).toHaveBeenCalledWith(army.armyLink, '_blank')
+    expect(open).toHaveBeenCalledWith(army.armyLink, '_blank', 'noopener')
   })
 })

@@ -34,7 +34,11 @@
             </div>
           </dl>
 
-          <el-button class="army-card__copy" @click="copyLink(army.armyLink)">
+          <el-button
+            class="army-card__copy"
+            :aria-label="`复制 ${army.name} 的阵型链接`"
+            @click="copyLink(army.armyLink)"
+          >
             复制阵型链接
           </el-button>
         </li>
@@ -83,8 +87,9 @@ async function copyLink(link: string) {
     await navigator.clipboard.writeText(link)
     ElMessage.success('已复制阵型链接')
   } catch {
-    // 非 HTTPS 或旧浏览器没有 clipboard：退化成打开链接，用户可自行复制
-    window.open(link, '_blank')
+    // 非 HTTPS 或旧浏览器没有 clipboard：退化成打开链接，用户可自行复制。
+    // 带 noopener：新窗口拿不到 window.opener（链接是第三方域名，别给它回写本页的能力）。
+    window.open(link, '_blank', 'noopener')
   }
 }
 
