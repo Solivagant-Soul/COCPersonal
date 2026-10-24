@@ -126,8 +126,16 @@ def test_warreport_package_does_not_import_web_framework():
     照抄 ``tests/collector/test_scheduler.py`` 的两条边界测试的写法（AST 静态查，
     不靠 import 时报错），只是把目录换成 ``app/warreport``。
     """
+    # 路径必须锚在本文件上，不能写相对的 ``Path("app/warreport")``：那要求
+    # 调用者的 CWD 正好是 ``backend/``。从仓库根跑（`python -m pytest backend/...`）
+    # 或换个工作目录时，rglob 扫不到任何文件，offenders 恒为空 —— 边界测试
+    # 会**永远通过**，无论代码里加了什么依赖。下面的非空断言就是这道保险。
+    package = Path(__file__).resolve().parents[2] / "app" / "warreport"
+    files = sorted(package.rglob("*.py"))
+    assert files, f"没扫到任何文件，路径边界测试已失效：{package}"
+
     offenders = []
-    for path in Path("app/warreport").rglob("*.py"):
+    for path in files:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
