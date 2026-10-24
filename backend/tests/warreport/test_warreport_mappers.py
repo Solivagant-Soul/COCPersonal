@@ -210,6 +210,32 @@ def test_army_row_coerces_numeric_strings():
     assert row["average_destruction"] == 97.25
 
 
+def test_army_row_truncates_name_to_the_column_width():
+    """``name`` 是 ``String(100)``：超长要截断，不能让 INSERT 炸掉整表替换。
+
+    不截断的后果不是"这条名字难看"，而是**整次**整表替换失败（DELETE 已执行、
+    事务回滚）—— 阵容从此停在旧版本，只有 collector_runs.error 看得到原因。
+    """
+    row = army_row(_army_raw(name="X" * 150), 1, NOW)
+
+    assert row is not None
+    assert len(row["name"]) == 100
+    # 只砍尾巴，不能顺手把别的列搞丢
+    assert row["canonical_key"] == "k1"
+
+
+def test_int_like_floats_are_accepted_but_fractions_are_not():
+    """``rank: 3.0`` 是整数名次（某些 JSON 会这么写），``3.5`` 不是。"""
+    both = player_item({
+        "tag": "#P1", "name": "P1", "rank": 3.0, "previousRank": 4.5,
+    })
+    assert both["rank"] == 3
+    assert both["previousRank"] is None
+
+    # rank 缺失/不可用 → 丢行；previousRank 不重要，不该连累整行
+    assert player_item({"tag": "#P1", "name": "P1", "rank": 3.5}) is None
+
+
 def test_army_row_drops_without_canonical_key():
     assert army_row({"name": "X"}, 1, NOW) is None
 

@@ -21,6 +21,11 @@ from typing import Any
 
 from app.coc.tags import normalize_tag
 
+#: ``WarReportArmy.name`` 的列宽。上游的配兵名是人写的标签，超过 100 字符
+#: 不是不可能事件；不截断的话 INSERT 会炸掉**整次**整表替换（DELETE 已执行、
+#: 事务回滚），阵容就永远停在旧版本 —— 只损失一个名字尾巴要划算得多。
+ARMY_NAME_MAX = 100
+
 #: ``WarReportArmy`` 里 not null 的列。缺任何一个都不能成行：把 NULL 放过去，
 #: ``WarReportArmy(**row)`` 会在 INSERT 期炸掉整次整表替换（那时 DELETE 已执行、
 #: 事务回滚），阵容会永远停在旧版本。丢一条脏行只损失那条配兵。
@@ -45,6 +50,13 @@ def _str_or_none(value: Any) -> str | None:
     return text or None
 
 
+def _truncate(value: str | None, limit: int) -> str | None:
+    """截到列宽以内；``None`` 原样返回（交给必填列检查去丢这一行）。"""
+    if value is None:
+        return None
+    return value[:limit]
+
+
 def _tag_or_none(value: Any) -> str | None:
     """归一化为 ``#大写``；空值返回 None。
 
@@ -57,14 +69,19 @@ def _tag_or_none(value: Any) -> str | None:
 
 
 def _int_or_none(value: Any) -> int | None:
-    """接受 ``None`` / ``int`` / 数字字符串，转不了返回 None。
+    """接受 ``None`` / ``int`` / 整值 ``float`` / 数字字符串，转不了返回 None。
 
     ``bool`` 先挡掉：它是 ``int`` 的子类，放过去 ``True`` 会悄悄变成名次 1。
+
+    整值浮点（``3.0``，某些 JSON 序列化会把整数写成这样）按整数收；非整值
+    （``3.5``）返回 None —— 名次 3.5 没有意义，丢这一行比编一个名次安全。
     """
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
     try:
         return int(str(value).strip())
     except (TypeError, ValueError):
@@ -155,7 +172,7 @@ def army_row(
     """
     row = {
         "position": position,
-        "name": _str_or_none(raw.get("name")),
+        "name": _truncate(_str_or_none(raw.get("name")), ARMY_NAME_MAX),
         "canonical_key": _str_or_none(raw.get("canonicalKey")),
         "army_share_code": _str_or_none(raw.get("armyShareCode")),
         "army_link": _str_or_none(raw.get("armyLink")),
