@@ -188,6 +188,17 @@ async def _replace_armies(
         seen.add(row["canonical_key"])
         rows.append(row)
 
+    if raw and not rows:
+        # 上游字段改名时 ``army_row`` 会把**每一行**都判成脏行。若照常往下走，
+        # 整表替换就变成「DELETE 全表 + INSERT 0 行」：阵容页被静默清空，
+        # 而 collector_runs 记的是 success —— 只有下一天发现页面空了才知道。
+        # 空列表是合法的上游状态（「确实没有」，照常清空，见计划 Review Focus 6），
+        # 非空却一行都用不了则一定是响应形状变了，必须响亮失败并保留旧数据。
+        raise ValueError(
+            f"/armies 返回 {len(raw)} 条，但没有一条能映射成配兵行"
+            "（多半是上游字段改名）；已放弃本次整表替换，旧数据保留"
+        )
+
     # 锁 → 删 → 插 → commit。锁是事务级的，commit 时自动释放。
     await session.execute(
         text("SELECT pg_advisory_xact_lock(:key)"),

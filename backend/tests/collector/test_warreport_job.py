@@ -217,6 +217,55 @@ async def test_armies_are_still_refreshed_when_no_snapshot_is_discovered(session
     )).scalar_one() == 1
 
 
+async def test_empty_armies_response_clears_the_table(session):
+    """上游给 ``[]`` = 「确实没有配兵」→ 清空整表。
+
+    与「非空但一行都映射不了」是两件事：那种情况必须失败并保留旧数据
+    （见下一条用例），否则上游字段改名会静默清空阵容页。
+    """
+    await collect_warreport(FakeWarReport({TODAY}), session, now=NOW)
+    assert (await session.execute(
+        select(func.count()).select_from(WarReportArmy)
+    )).scalar_one() == 1
+
+    class NoArmies(FakeWarReport):
+        async def get_json(self, path, params=None):
+            if path == "/armies":
+                return []
+            return await super().get_json(path, params)
+
+    result = await collect_warreport(NoArmies({TODAY}), session, now=NOW)
+
+    assert result["items_failed"] == 0
+    assert (await session.execute(
+        select(func.count()).select_from(WarReportArmy)
+    )).scalar_one() == 0
+
+
+async def test_unmappable_armies_response_fails_and_keeps_old_rows(session):
+    """非空响应里没有一行能映射 → 失败，**旧数据必须留着**。
+
+    上游改名（例如 ``percentage`` → ``useRate``）时每一行都会缺必填列。
+    若照常整表替换，就是 DELETE 全表 + INSERT 0 行：阵容页静默清空，
+    采集结果还是 success —— 故障没有任何报错可看。
+    """
+    await collect_warreport(FakeWarReport({TODAY}), session, now=NOW)
+
+    class RenamedFields(FakeWarReport):
+        async def get_json(self, path, params=None):
+            if path == "/armies":
+                # 名字还在，但必填列全没了（模拟上游字段改名）
+                return [{"name": "Thrower", "useRate": 27.27}, {"name": "Yeti"}]
+            return await super().get_json(path, params)
+
+    result = await collect_warreport(RenamedFields({TODAY}), session, now=NOW)
+
+    assert result["items_failed"] == 1
+    assert "2 条" in str(result["detail"])
+    rows = (await session.execute(select(WarReportArmy))).scalars().all()
+    assert [row.canonical_key for row in rows] == ["k1"]
+
+
 async def test_army_positions_stay_contiguous_after_filtering_and_dedup(session):
     """脏行与重复 key 都不能在 position 上留空洞，也不能让整次替换失败。"""
 
