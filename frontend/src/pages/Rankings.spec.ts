@@ -55,6 +55,40 @@ const seasonsPage = {
   meta: rankingsPage.meta,
 }
 
+/** 可控 resolve 的响应：用来制造「先发的请求后回来」。 */
+function deferredPage() {
+  let resolve!: (value: unknown) => void
+  const promise = new Promise<unknown>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+/** 取**当前**的赛季分页器。
+ *
+ * 不能把包装器存到变量里反复用：拉取期间 `LoadingBlock` 会把「表格 + 分页器」
+ * 整个卸载重建，之前拿到的包装器已经脱离组件树，对它 `$emit` 什么也不会发生
+ * （表现为「事件发出去了但父组件毫无反应」）。每次操作前重新取。
+ *
+ * 按 `total` 定位而不是按下标：实时榜与赛季榜各有一个分页器，只有赛季这个的
+ * `total` 是 200（实时榜是 1）。
+ */
+function seasonPager(w: Awaited<ReturnType<typeof mountRankings>>) {
+  const pager = w
+    .findAllComponents({ name: 'ElPagination' })
+    .find((p) => p.props('total') === 200)
+  if (!pager) throw new Error('没找到赛季分页器（total=200）')
+  return pager
+}
+
+/** 造一页榜单数据（name 决定渲染出的名字，用于断言是哪一次响应）。 */
+function pageNamed(name: string, total = 1) {
+  return {
+    data: { items: [{ ...clanRow, name }], total, kind: 'clans' },
+    meta: rankingsPage.meta,
+  }
+}
+
 async function mountRankings() {
   await router.push({ name: 'rankings' })
   await router.isReady()
@@ -183,9 +217,27 @@ describe('Rankings', () => {
     expect(w.text()).toContain('数据来源：War Report')
   })
 
-  it('切赛季回到第 1 页并重新拉取', async () => {
+  it('翻到第 2 页后切赛季，回到第 1 页重拉', async () => {
+    // total 必须大于一页，否则分页器根本翻不到第 2 页
+    vi.mocked(getWarReportSeasonRankings).mockResolvedValue({
+      ...pageNamed('占位', 200),
+    } as never)
+
     const w = await mountRankings()
     await switchToSeason(w)
+
+    // 先把赛季榜真的翻到第 2 页 —— 不先翻走的话，「切赛季后是第 1 页」
+    // 在 page 从来没离开过 1 的情况下永远成立，测不出东西。
+    await seasonPager(w).vm.$emit('update:current-page', 2)
+    await seasonPager(w).vm.$emit('current-change', 2)
+    await flushPromises()
+    expect(getWarReportSeasonRankings).toHaveBeenLastCalledWith(
+      '2026-10-05',
+      'clans',
+      2,
+      20,
+    )
+
     vi.mocked(getWarReportSeasonRankings).mockClear()
     // 必须按 class 定位：el-pagination 的 layout 含 sizes，自己也会渲染一个
     // el-select，`findComponent({ name: 'ElSelect' })` 拿到的可能是分页器那个。
@@ -193,6 +245,83 @@ describe('Rankings', () => {
     await select.vm.$emit('update:modelValue', '2026-09-07')
     await flushPromises()
     expect(getWarReportSeasonRankings).toHaveBeenCalledWith('2026-09-07', 'clans', 1, 20)
+  })
+
+  it('翻到第 2 页后改每页条数，也回到第 1 页', async () => {
+    vi.mocked(getWarReportSeasonRankings).mockResolvedValue({
+      ...pageNamed('占位', 200),
+    } as never)
+
+    const w = await mountRankings()
+    await switchToSeason(w)
+    await seasonPager(w).vm.$emit('update:current-page', 2)
+    await seasonPager(w).vm.$emit('current-change', 2)
+    await flushPromises()
+    expect(getWarReportSeasonRankings).toHaveBeenLastCalledWith(
+      '2026-10-05',
+      'clans',
+      2,
+      20,
+    )
+
+    vi.mocked(getWarReportSeasonRankings).mockClear()
+    // 上面的拉取已经把分页器卸载重建过一次，这里必须重新取
+    await seasonPager(w).vm.$emit('update:page-size', 100)
+    await seasonPager(w).vm.$emit('size-change', 100)
+    await flushPromises()
+
+    expect(getWarReportSeasonRankings).toHaveBeenCalledWith('2026-10-05', 'clans', 1, 100)
+  })
+
+  it('晚到的旧响应不覆盖新响应（实时榜切类型）', async () => {
+    const first = deferredPage()
+    const second = deferredPage()
+    const queue = [first, second]
+    vi.mocked(getRankings).mockImplementation(
+      () => queue.shift()!.promise as never,
+    )
+
+    const w = await mountRankings() // 第 1 次请求（部落）挂起
+    const group = w.findComponent({ name: 'ElRadioGroup' })
+    await group.setValue('players') // 第 2 次请求（玩家）挂起
+    await flushPromises()
+
+    // 后发的先回来：列表显示新响应
+    second.resolve(pageNamed('新响应'))
+    await flushPromises()
+    expect(w.text()).toContain('新响应')
+    expect(w.find('.loading-block').exists()).toBe(false)
+
+    // 先发的后回来：必须被丢弃，否则列表会退回旧类型的数据，
+    // 而单选按钮与分页器还停在新状态上 —— 用户不手动再切一次就不会自愈。
+    first.resolve(pageNamed('旧响应'))
+    await flushPromises()
+    expect(w.text()).toContain('新响应')
+    expect(w.text()).not.toContain('旧响应')
+  })
+
+  it('晚到的旧响应不覆盖新响应（切赛季）', async () => {
+    const first = deferredPage()
+    const second = deferredPage()
+    const queue = [first, second]
+    vi.mocked(getWarReportSeasonRankings).mockImplementation(
+      () => queue.shift()!.promise as never,
+    )
+
+    const w = await mountRankings()
+    await switchToSeason(w) // 默认赛季，请求挂起
+    const select = w.findComponent('.season-select')
+    await select.vm.$emit('update:modelValue', '2026-09-07') // 新赛季，请求挂起
+    await flushPromises()
+
+    second.resolve(pageNamed('九月榜'))
+    await flushPromises()
+    expect(w.text()).toContain('九月榜')
+
+    first.resolve(pageNamed('十月榜'))
+    await flushPromises()
+    expect(w.text()).toContain('九月榜')
+    expect(w.text()).not.toContain('十月榜')
   })
 
   it('赛季列表为空时显示空态，不卡在 loading', async () => {

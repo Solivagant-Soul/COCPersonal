@@ -153,7 +153,19 @@ function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError('UNKNOWN_ERROR', '请求失败', 0)
 }
 
+/**
+ * 请求序号闸门：**只有最后发出的那一次请求能写状态**。
+ *
+ * 切类型 / 翻页 / 改页长都比一次请求快，先发的可能后回来。没有闸门时，
+ * 晚到的旧响应会盖掉新响应：列表停在旧的类型或旧的页，分页器却显示新的，
+ * 而且**不会自愈** —— 用户不动手就一直是错的。错误同理：旧请求的失败不该
+ * 盖掉新请求已经拿到的数据。
+ */
+let realtimeSeq = 0
+let seasonSeq = 0
+
 async function fetchRealtime() {
+  const seq = ++realtimeSeq
   realtimeLoading.value = true
   realtimeError.value = null
   try {
@@ -163,15 +175,19 @@ async function fetchRealtime() {
       realtimePage.value,
       realtimePageSize.value,
     )
+    if (seq !== realtimeSeq) return
     realtimeRows.value = res.data.items
     realtimeTotal.value = res.data.total
     // 契约 §6.2 要求实时榜显示 meta.fetchedAt：这是「榜单多久以前抓的」，
     // 与提示里的「约每 6 小时」配合，用户才知道现在看的是不是旧数。
     realtimeFetchedAt.value = res.meta.fetchedAt
   } catch (err) {
+    if (seq !== realtimeSeq) return
     realtimeError.value = toApiError(err)
   } finally {
-    realtimeLoading.value = false
+    // loading 也只能由最新一次熄灭：旧请求在 finally 里无条件置 false，
+    // 会把还在飞的新请求的 loading 提前关掉（用户看到"加载完了"却是旧列表）。
+    if (seq === realtimeSeq) realtimeLoading.value = false
   }
 }
 
@@ -204,6 +220,7 @@ async function loadSeasons() {
 async function fetchSeason() {
   // 没有赛季可选时不该发榜请求
   if (seasonSnapshot.value === null) return
+  const seq = ++seasonSeq
   seasonLoading.value = true
   seasonError.value = null
   try {
@@ -213,12 +230,14 @@ async function fetchSeason() {
       seasonPage.value,
       seasonPageSize.value,
     )
+    if (seq !== seasonSeq) return
     seasonRows.value = res.data.items
     seasonTotal.value = res.data.total
   } catch (err) {
+    if (seq !== seasonSeq) return
     seasonError.value = toApiError(err)
   } finally {
-    seasonLoading.value = false
+    if (seq === seasonSeq) seasonLoading.value = false
   }
 }
 
