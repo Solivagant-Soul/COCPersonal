@@ -44,6 +44,11 @@ _KIND_MAP = {
     "clans": RankingKind.wr_season_clans,
 }
 
+#: 反向映射（库里的 kind → 对外短名）。**从 ``_KIND_MAP`` 推**，不手写：
+#: 手写 ``players if ... else clans`` 的话，将来加第三个 kind 会被静默算进 clans
+#: 的条数里（页面表现为"部落多了一批人"），而没有任何报错。
+_LABEL_BY_KIND = {str(kind): label for label, kind in _KIND_MAP.items()}
+
 #: 赛季列表最多给几季。与采集侧"最近 3 个快照"保持一致。
 _MAX_SEASONS = 3
 
@@ -78,6 +83,18 @@ def _resolve_kind(kind: str) -> RankingKind:
     if ranking_kind is None:
         raise _bad_params(f"kind 必须是 {sorted(_KIND_MAP)} 之一")
     return ranking_kind
+
+
+def _iso_z(value: dt.datetime | None) -> str | None:
+    """UTC 时间 → ``...Z`` 结尾的 ISO 串。
+
+    与 ``meta.fetched_at`` 同一拼法（``DataOut`` 的 pydantic 序列化给的也是 ``Z``）。
+    两边不一致的话，同一个响应里会出现 ``+00:00`` 与 ``Z`` 两种写法，
+    前端只要有一处 ``new Date()`` 之外的自写解析就会踩空。
+    """
+    if value is None:
+        return None
+    return value.astimezone(dt.UTC).isoformat().replace("+00:00", "Z")
 
 
 # --------------------------------------------------------------------------- #
@@ -118,8 +135,10 @@ async def list_warreport_seasons():
     for season_id, kind, count, fetched_at in rows:
         if season_id is None:  # 这两类 kind 的 season_id 恒有值，兜底而已
             continue
-        key = "players" if kind == str(RankingKind.wr_season_players) else "clans"
-        counts.setdefault(season_id, {"players": 0, "clans": 0})[key] = count
+        # SQL 已经按 ``_KIND_MAP`` 的值过滤过，这里每个 kind 必有对应短名
+        counts.setdefault(season_id, {"players": 0, "clans": 0})[
+            _LABEL_BY_KIND[kind]
+        ] = count
         if fetched_at is not None and (
             season_id not in freshest or fetched_at > freshest[season_id]
         ):
@@ -132,7 +151,7 @@ async def list_warreport_seasons():
             "seasonId": season_id,
             "players": counts[season_id]["players"],
             "clans": counts[season_id]["clans"],
-            "fetchedAt": freshest[season_id].isoformat()
+            "fetchedAt": _iso_z(freshest[season_id])
             if season_id in freshest
             else None,
         }

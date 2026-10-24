@@ -49,8 +49,10 @@ async def test_seasons_listed_newest_first_with_counts(client, boards):
     assert [i["seasonId"] for i in items] == [S1, S2]
     assert items[0]["players"] == 60
     assert items[0]["clans"] == 1
-    # fetchedAt 是 ISO 串（来自 max(fetched_at)），只断言存在且非空
-    assert items[0]["fetchedAt"]
+    # fetchedAt 与 meta.fetched_at 必须是同一种拼法（都以 Z 结尾），
+    # 否则同一个响应里出现两种时间格式
+    assert items[0]["fetchedAt"].endswith("Z")
+    assert body["meta"]["fetched_at"].endswith("Z")
     assert body["meta"]["cache"] == "HIT"
     assert body["meta"]["ttl_seconds"] == 86400
 
