@@ -187,6 +187,9 @@ describe('Rankings', () => {
     expect(w.text()).toContain('暂无赛季数据')
     // LoadingBlock 用的是 skeleton、没有「加载中」字样，所以断言 DOM 而不是文案
     expect(w.find('.loading-block').exists()).toBe(false)
+    // 没有赛季可选时**绝不能**去拉榜：那会打出一个 /seasons//clans（快照为空）
+    // 的请求，后端 400，页面从"暂无数据"变成"查询失败"
+    expect(getWarReportSeasonRankings).not.toHaveBeenCalled()
   })
 
   it('切回实时榜再切回来，不重复请求赛季列表', async () => {
