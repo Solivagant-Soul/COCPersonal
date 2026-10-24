@@ -95,10 +95,27 @@ def test_api_passes_warreport_env():
 
     漏掉这两行不会有任何报错：容器里用 config.py 的默认值照样能跑，
     于是「我在 .env 里改成了测试假上游」被无声忽略，排障方向会完全跑偏。
+
+    形式必须是 ``${VAR:-默认}``：``${VAR}`` 在 ``.env`` 缺这一行时展开成空串，
+    而空串 ``WARREPORT_TIMEOUT`` 会让 Settings() 在导入期抛 ValidationError
+    （容器无限重启，日志只有一行 pydantic 报错）。
     """
     env = _compose()["services"]["api"]["environment"]
-    assert "WARREPORT_BASE_URL" in env
-    assert "WARREPORT_TIMEOUT" in env
+    assert env["WARREPORT_BASE_URL"] == "${WARREPORT_BASE_URL:-https://api.warreport.app}"
+    assert env["WARREPORT_TIMEOUT"] == "${WARREPORT_TIMEOUT:-15}"
+
+    # 只有 api 服务需要它（web/postgres 不采数据）
+    services = _compose()["services"]
+    for name in ("web", "postgres"):
+        keys = services[name].get("environment") or {}
+        assert "WARREPORT_BASE_URL" not in keys, f"{name} 不该拿到 War Report 配置"
+
+
+def test_env_example_has_non_empty_warreport_values():
+    """根 `.env.example` 的两个 War Report 值都得是非空默认值（空值坑见上）。"""
+    text = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "WARREPORT_BASE_URL=https://api.warreport.app" in text
+    assert "WARREPORT_TIMEOUT=15" in text
 
 
 def test_deployment_doc_credits_war_report():
@@ -107,6 +124,34 @@ def test_deployment_doc_credits_war_report():
     assert "War Report" in doc
     assert "署名" in doc
     assert "https://warreport.app" in doc
+
+
+def test_deployment_doc_sections_stay_numbered():
+    """§12 是 War Report、§13 是已知限制。
+
+    重编号漏改一处，运维按「§12 看已知限制」翻到的是数据源章节 —— 而这类交叉引用
+    全站散在 README / AGENTS / compose 注释里，人眼核不全。
+    """
+    doc = (REPO_ROOT / "docs" / "deployment.md").read_text(encoding="utf-8")
+    assert "## 12. War Report" in doc
+    assert "## 13. 已知限制" in doc
+    assert "## 12. 已知限制" not in doc
+
+
+def test_deployment_doc_matches_warreport_schedule():
+    """文档写的采集时间必须是真的 cron。
+
+    ``docs/deployment.md`` §12 写着「每天 04:23 UTC（cron 23 4 * * *）」，
+    调度表在 ``app/collector/scheduler.py``。改了 cron 不改文档，运维会在
+    完全错误的时刻去翻日志找采集记录。
+    """
+    from app.collector.scheduler import SCHEDULE_SPEC
+
+    cron_by_job = {job: cron for cron, job, _ in SCHEDULE_SPEC}
+    doc = (REPO_ROOT / "docs" / "deployment.md").read_text(encoding="utf-8")
+    assert cron_by_job["warreport"] in doc, (
+        f"文档没写 warreport 的真实 cron（{cron_by_job['warreport']}）"
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -92,6 +92,8 @@ openssl rand -base64 36   # 跑三次：POSTGRES_PASSWORD / ADMIN_PASSWORD / ADM
 | `RATE_LIMIT_PER_MINUTE` | 60 | 对外每 IP 每分钟；`/healthz`、`/readyz` 不计桶 |
 | `APP_ROLE` | `all` | 单机部署固定 `all`；`api`/`collector` 是拆进程预留位 |
 | `LOG_LEVEL` | `INFO` | |
+| `WARREPORT_BASE_URL` | `https://api.warreport.app` | War Report 赛季榜 / 阵容的上游；**不是密钥**，指向测试假上游时改这里（§12） |
+| `WARREPORT_TIMEOUT` | `15` | War Report 单请求超时（秒）。**别写成空值**：空串会让 `Settings()` 在导入期报错、进程起不来（compose 的 `${VAR:-默认}` 会把空值换回默认，直接跑 uvicorn 则没有这层保护） |
 
 ```bash
 git check-ignore .env && echo OK   # 必须有输出：.env 绝不能入库
@@ -370,7 +372,7 @@ docker compose exec api python -m app.cli seed-dev-rankings
    curl -s http://127.0.0.1/api/v1/meta/freshness | python3 -m json.tool
    # data.rankings：每地区每类榜单的最后采集时间
    # data.collectorRuns：最近 20 次采集任务（job 可能状态：success/failed/partial）
-   # 调度周期【已验证·scheduler.py】：rankings 每 6h（:13 分）、leagues/seasons 每 1h（:41/:29）、static_data 每天（03:17 UTC），全部错开整点
+   # 调度周期【已验证·scheduler.py】：rankings 每 6h（:13 分）、leagues/seasons 每 1h（:41/:29）、static_data 每天（03:17 UTC）、warreport 每天（04:23 UTC），全部错开整点
    ```
 
 > 红线：代理是社区免费共享的，**不要把 `COC_RATE_LIMIT` 调高**；把它当成"救慢采集"
@@ -435,11 +437,11 @@ docker compose logs --tail=100 api      # 最近 100 行
 
 ### 手动触发一次采集
 
-调度器按 cron 触发（`rankings` 每 6 小时、`leagues`/`seasons` 每小时、`static_data` 每天）。
-刚换好真实 Token 时不必干等：
+调度器按 cron 触发（`rankings` 每 6 小时、`leagues`/`seasons` 每小时、`static_data` 每天、
+`warreport` 每天 04:23 UTC）。刚换好真实 Token 时不必干等：
 
 ```bash
-docker compose exec api python -m app.cli collect rankings     # 也可 static_data / leagues / seasons
+docker compose exec api python -m app.cli collect rankings     # 也可 static_data / leagues / seasons / warreport
 docker compose exec api python -m app.cli collect --help
 ```
 

@@ -107,18 +107,28 @@ def test_app_role_defaults_to_all():
 
 
 def test_env_example_has_warreport_base_url():
-    """示例文件里要有 WARREPORT_BASE_URL。
+    """示例文件里要有 WARREPORT_BASE_URL，且是**可用默认值**而非空占位。
 
-    它不是密钥（没有 Key、没有白名单），所以**不**是空占位：写成可用默认值，
-    运维才知道这个开关存在（不设这两项也能跑，但没人会去看 config.py）。
+    它不是密钥（没有 Key、没有白名单），所以写成可用默认值，运维才知道这个开关存在
+    （不设这两项也能跑，但没人会去看 config.py）。
+
+    这里连**值非空**一起断言：`WARREPORT_TIMEOUT=`（空值）会让 ``Settings()``
+    在导入期抛 ``ValidationError`` —— 容器起不来，而 CI 只看"键存在"是发现不了的。
     """
-    assert "WARREPORT_BASE_URL" in _read(".env.example")
+    text = _read(".env.example")
+    assert "WARREPORT_BASE_URL=https://api.warreport.app" in text
+    assert "WARREPORT_TIMEOUT=15" in text
 
 
 def test_backend_compose_passes_warreport_env():
-    """本目录的 compose 同样要透传 War Report 配置（两套部署栈各有一份）。"""
+    """本目录的 compose 同样要透传 War Report 配置（两套部署栈各有一份）。
+
+    必须是 ``${VAR:-默认}`` 形式：``${VAR}`` 在 ``.env`` 缺这一行时会展开成空串，
+    而空串对 ``WARREPORT_TIMEOUT`` 就是启动即崩。
+    """
     env = _compose()["services"]["api"]["environment"]
-    assert "WARREPORT_BASE_URL" in env
+    assert env["WARREPORT_BASE_URL"] == "${WARREPORT_BASE_URL:-https://api.warreport.app}"
+    assert env["WARREPORT_TIMEOUT"] == "${WARREPORT_TIMEOUT:-15}"
 
 
 # --------------------------------------------------------------------------- #
