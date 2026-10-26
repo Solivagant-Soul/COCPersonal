@@ -104,6 +104,12 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ("超级炸弹人", ["Icon_HV_Super_Wall_Breaker"]),
         ("超级女巫", ["Icon_HV_Super_Witch"]),
         ("超级法师", ["Icon_HV_Super_Wizard"]),
+        # 以下兵种 Fankit 还没出 icon_hv，只能取整图（按游戏内尺寸优先）
+        ("巨矛投手", ["Thrower_lvl_4", "Thrower_08_noShadow"]),
+        ("陨石戈仑", ["MeteoriteGolem_withGrassbase_f61_3k"]),
+        ("废墟女巫", ["Ruinwitch_f109_4k_withoutGroundshadows", "Ruinwitch_f109_4k"]),
+        ("德鲁伊", ["Troop_HV_Druid_lvl6", "Druid_HV_05"]),
+        ("超级大雪怪", ["icon_super_yeti", "SuperYeti_InfoScreen_InGameSize"]),
     ],
     "hero": [
         ("野蛮人之王", ["Icon_HV_Hero_Barbarian_King"]),
@@ -113,6 +119,9 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ("野蛮人之王_头像", ["Icon_HV_Barbarian_King_face"]),
         ("弓箭女皇_头像", ["Icon_HV_Archer_Queen_face"]),
         ("大守护者_头像", ["Icon_HV_Grand_Warden_face"]),
+        # 新英雄同样没有 icon_hv，取整图（无阴影版更干净）
+        ("飞龙公爵", ["DragonDuke_f011_4k"]),
+        ("亡灵王子", ["Hero_Minion_Prince_01_NoShadow"]),
     ],
     "pet": [
         ("莱希", ["Icon_HV_Hero_Pets_LASSI"]),
@@ -125,6 +134,9 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ("凤凰", ["Icon_HV_Hero_Pets_Phoenix"]),
         ("灵狐", ["Icon_HV_Hero_Pets_Spirit_Fox"]),
         ("阿啾", ["Icon_HV_Hero_Pets_Sneezy_1"]),
+        # 新战宠暂无 120px 图标，取整图
+        ("贪婪渡鸦", ["pet_Greedy_Raven_1_grasspng"]),
+        ("愤怒水母", ["Hero_Pet_HV_Angry_Jelly_01"]),
     ],
     "spell": [
         ("雷电法术", ["Icon_HV_Spell_Lightning_new"]),
@@ -151,6 +163,7 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ("圣诞奇袭法术", ["Icon_HV_Spell_Santas_Surprise"]),
         ("黄牌法术", ["Icon_HV_Spell_Yellow_Card"]),
         ("霜虫袋法术", ["Icon_HV_Spell_Bag_of_Frostmites"]),
+        ("愤怒法术", ["icon_angry_spell"]),
     ],
     "workshop": [
         ("攻城战车", ["Icon_HV_Siege_Machine_Wall_Wrecker"]),
@@ -159,6 +172,9 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ("攻城滚木车", ["Icon_HV_Siege_Machine_Log_Launcher"]),
         ("攻城烈焰车", ["Icon_HV_Siege_Machine_Flame_Flinger"]),
         ("攻城钻机", ["Icon_HV_Siege_Machine_Battle_Drill"]),
+        ("攻城气球", ["Siege_Machine_HV_Stone_Slammer_1"]),
+        ("部队发射器", ["icon_troop_launcher", "Troop_Launcher_NoGrass_NoShadow"]),
+        ("空中战车", ["Siege_Machine_Sky_wagon_01"]),
     ],
     "equipment": [
         ("野蛮人木偶", ["Hero_Equipment_BK_Barbarian_Puppet"]),
@@ -188,8 +204,8 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ("狂暴宝石", ["Hero_Equipment_GW_Rage_Gem"]),
         ("治疗书卷", ["Hero_Equipment_GW_Healing_Tome"]),
         ("巨大火球", ["Hero_Equipment_GW_Fireball"]),
-        # Fankit 只提供 psd，脚本会跳过并记为缺源
-        ("熔岩气球玩偶", ["HeroGear_LavaloonDoll"]),
+        # 大图只放了 psd，退一步用官方的 332px 装备图标
+        ("熔岩气球玩偶", ["HeroGear_LavaloonDoll", "icon_gear_GW_LavaloonPuppet"]),
         ("英雄火炬", ["HeroGear_GW_Olympic_Torch_hh0000"]),
         ("寻踪飞盾", ["Hero_Equipment_RC_Seeking_Shield"]),
         ("皇家宝石", ["Hero_Equipment_RC_Royal_Gem"]),
@@ -205,6 +221,15 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ),
         ("雷电战靴", ["Hero_Equipment_RC_ElectroBoots"]),
         ("冷冽冰晶", ["Hero_Equipment_rc_frost_flake"]),
+        # 飞龙公爵六件套：Fankit 用 HG_DD_ 前缀，标题里带空格，别手抖改成下划线
+        ("烈焰之心", ["HG_DD_Fire Heart"]),
+        ("助燃器", ["HG_DD_Flame Blower"]),
+        ("爆震器", ["HG_DD_StunBlast"]),
+        ("雷电獠牙", ["HG_DD_Electro_Fangs"]),
+        ("火箭背包", ["HG_DD_Rocket_BackPack"]),
+        ("反击卡组", ["HG_DD_reverse_card"]),
+        # 亡灵王子的史诗装备 Portal Pendant，Fankit 上连 psd 都没有，长期缺源
+        ("传送吊坠", ["Hero_Equipment_MP_PortalPendant"]),
         # icon_hv 里唯一的两个装备图标，补进来
         ("弓箭女皇_弓", ["Icon_HV_Hero_Archer_Queen_Bow"]),
         ("野蛮人之王_拳", ["Icon_HV_Hero_Barbarian_King_Fist"]),
@@ -267,7 +292,7 @@ def pick(by_title: dict[str, list[dict]], titles: list[str]) -> dict | None:
         variants = by_title.get(title)
         if not variants:
             continue
-        # 只认位图：Fankit 上少数装备（如熔岩气球玩偶）只放了 psd，跳过并计入缺源
+        # 只认位图：psd 跳过并试下一个候选（熔岩气球玩偶就是靠这条退回图标的）
         rasters = [v for v in variants if v.get("ext") != "psd"]
         if not rasters:
             continue
