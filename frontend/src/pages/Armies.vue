@@ -11,7 +11,10 @@
       <ul v-else class="army-grid">
         <li v-for="army in armies" :key="army.canonicalKey" class="army-card">
           <div class="army-card__head">
-            <span class="army-card__name">{{ army.name }}</span>
+            <span class="army-card__name">
+              <span class="army-card__position">{{ String(army.position).padStart(2, '0') }}</span>
+              {{ armyTitleZh(army.name) }}
+            </span>
             <span class="army-card__percentage">{{ army.percentage.toFixed(1) }}%</span>
           </div>
 
@@ -34,12 +37,14 @@
             </div>
           </dl>
 
+          <ArmyComposition :share-code="army.armyShareCode" />
+
           <el-button
             class="army-card__copy"
-            :aria-label="`复制 ${army.name} 的阵型链接`"
+            :aria-label="`复制 ${armyTitleZh(army.name)} 的阵容链接`"
             @click="copyLink(army.armyLink)"
           >
-            复制阵型链接
+            复制阵容链接
           </el-button>
         </li>
       </ul>
@@ -56,9 +61,11 @@ import { ElMessage } from 'element-plus'
 
 import { getArmies, type ArmyRow } from '../api/endpoints'
 import { ApiError } from '../api/request'
+import ArmyComposition from '../components/ArmyComposition.vue'
 import ErrorCard from '../components/ErrorCard.vue'
 import LoadingBlock from '../components/LoadingBlock.vue'
 import SourceNote from '../components/SourceNote.vue'
+import { armyTitleZh } from '../data/armyComposition'
 
 const armies = ref<ArmyRow[]>([])
 const loading = ref(false)
@@ -85,7 +92,7 @@ async function copyLink(link: string) {
   try {
     if (!navigator.clipboard) throw new Error('no clipboard')
     await navigator.clipboard.writeText(link)
-    ElMessage.success('已复制阵型链接')
+    ElMessage.success('已复制阵容链接')
   } catch {
     // 非 HTTPS 或旧浏览器没有 clipboard：退化成打开链接，用户可自行复制。
     // 带 noopener：新窗口拿不到 window.opener（链接是第三方域名，别给它回写本页的能力）。
@@ -99,7 +106,7 @@ onMounted(load)
 <style scoped>
 .army-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
   gap: 20px;
   margin: 0;
   padding: 0;
@@ -129,6 +136,12 @@ onMounted(load)
   font-weight: 600;
   color: var(--text-primary);
   overflow-wrap: anywhere;
+}
+
+.army-card__position {
+  margin-right: 5px;
+  color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
 }
 
 .army-card__percentage {

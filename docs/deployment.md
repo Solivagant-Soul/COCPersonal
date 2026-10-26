@@ -812,4 +812,18 @@ curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
 | `403` | 宿主目录权限：容器内 nginx 是 uid 101，`chmod -R a+rX` |
 | 换图后还是旧图 | 浏览器缓存 7d；文件名不带哈希，所以没给 `immutable` |
 
+### 阵容页配兵图标
+
+阵容页把分享码解析成「部队 / 法术 / 英雄 / 城堡」四组，图标按**中文名**拼路径：
+
+```
+/pictures/{army|workshop|spell|hero|pet|equipment}/{中文名}.{png|jpg|webp}
+```
+
+目录映射（部队→`army`、攻城机器→`workshop`）与全部中文名表都在
+`frontend/src/data/armyComposition.ts`。`ArmyUnitIcon.vue` 按 png → jpg → webp
+依次尝试，**都取不到就渲染文字瓦片**（不报错、不阻塞页面），所以缺几张新兵种图
+不会让页面裂开。要补图时，文件名必须与名称表里的中文名逐字一致；装备图体积大，
+只在「详情」里以文字展示。
+
 > `git clean -fdx` 会删掉这批图（被忽略的未跟踪文件），重建要重跑下载脚本。
