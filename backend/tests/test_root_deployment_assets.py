@@ -90,6 +90,27 @@ def test_only_web_exposes_ports():
     assert "ports" not in services["postgres"]
 
 
+def test_web_mounts_fankit_pictures_from_host():
+    """素材图必须靠 bind mount 进 nginx，且不得灌进构建上下文。
+
+    `pictures/` 是 gitignored 的本地资产（175 MB），镜像里没有它。少了这个挂载
+    **不会报任何错**：`location /` 的 `try_files` 会回落到 `/index.html`，于是
+    `/pictures/army/x.png` 返回 **200 + text/html** —— 看上去"通了"，实际全是首页。
+    这类假成功只能在浏览器里靠 Content-Type 看出来，所以钉成测试。
+    """
+    volumes = _compose()["services"]["web"]["volumes"]
+    mount = "./frontend/public/pictures:/usr/share/nginx/html/pictures:ro"
+    assert mount in volumes, f"web 必须只读挂载素材图（缺 {mount}），实际是 {volumes}"
+
+    # 反向约束：构建上下文要排除它，否则 175 MB 会被 COPY 进 builder 并烘进镜像。
+    dockerignore = (REPO_ROOT / "frontend" / ".dockerignore").read_text(encoding="utf-8")
+    assert "public/pictures" in dockerignore, "frontend/.dockerignore 必须排除 public/pictures"
+
+    # nginx 侧要有缓存块，否则每次翻页都重下整张图（175 MB 的资产）。
+    conf = (REPO_ROOT / "deploy" / "nginx.conf").read_text(encoding="utf-8")
+    assert "location /pictures/" in conf
+
+
 def test_api_passes_warreport_env():
     """War Report 的上游地址与超时必须能从 .env 透传进容器。
 

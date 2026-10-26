@@ -5,3 +5,5 @@ node_modules
 dist
 .vscode
 *.log
+# 素材图 175MB：只由 compose 的 bind mount 提供，别灌进构建上下文与镜像
+public/pictures

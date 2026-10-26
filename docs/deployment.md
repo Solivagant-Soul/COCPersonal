@@ -770,3 +770,46 @@ not endorsed by Supercell.*）。本站同样不是 Supercell 官方站点、未
 | 3 | `sqlalchemy` 锁 `<2.1`：升依赖时别放宽（见 §11） |
 | 4 | 单 worker/单副本：扩展前提是把限流、缓存、调度换成共享实现 + `APP_ROLE` 拆分 |
 | 5 | HTTPS 流程从未真实执行（§9） |
+
+## 14. 素材图（Fankit 图标，不进镜像）
+
+`scripts/fetch_fankit_assets.py` 把《部落冲突》图标下到仓库根的 `pictures/`，共
+**129 个文件 / 约 175 MB**，按 `army` / `equipment` / `hero` / `pet` / `spell` /
+`workshop` 分类，文件名是国服译名。
+
+**这个目录在 `.gitignore` 里**（`.gitignore` 的 `pictures/` 会匹配任意层级，所以
+`frontend/public/pictures/` 同样被忽略）—— 它**不在版本库里，也不在镜像里**。
+线上要让 `/pictures/...` 能访问，必须满足两个条件：
+
+1. 宿主机的 `frontend/public/pictures/` 存在且有图（`find ... -type f | wc -l` 应为 129）
+2. `docker-compose.yml` 里 `web.volumes` 的那行只读挂载在：
+
+   ```yaml
+   - ./frontend/public/pictures:/usr/share/nginx/html/pictures:ro
+   ```
+
+   `frontend/.dockerignore` 刻意排除 `public/pictures`，避免 175 MB 灌进构建上下文。
+
+改完执行 `./deploy/compose.sh up -d web`（**卷变更必须重建容器**，`nginx -s reload` 不够）。
+
+### 验证：必须看 Content-Type
+
+`deploy/nginx.conf` 的 `location /` 是 `try_files $uri $uri/ /index.html` ——
+**任何不存在的路径都会返回 200 + `text/html`**（首页壳）。所以：
+
+```bash
+PORT=$(./deploy/compose.sh --print-port)
+f=$(ls frontend/public/pictures/army | head -1)
+curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
+  "http://127.0.0.1:${PORT}/pictures/army/${f}"
+# 期望：200 image/png 7xxxx      ← 这才算通
+# 故障：200 text/html 4xxx       ← 挂载没生效，回落到 index.html
+```
+
+| 现象 | 原因 |
+| --- | --- |
+| `200 text/html` | 挂载没生效（没 `up -d web`，或路径写错） |
+| `403` | 宿主目录权限：容器内 nginx 是 uid 101，`chmod -R a+rX` |
+| 换图后还是旧图 | 浏览器缓存 7d；文件名不带哈希，所以没给 `immutable` |
+
+> `git clean -fdx` 会删掉这批图（被忽略的未跟踪文件），重建要重跑下载脚本。
