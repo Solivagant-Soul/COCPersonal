@@ -11,6 +11,6 @@
 .bases-placeholder {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.9375rem;
 }
 </style>

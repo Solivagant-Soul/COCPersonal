@@ -45,6 +45,6 @@ function submit() {
 .tag-input__error {
   margin-top: 8px;
   color: var(--el-color-danger);
-  font-size: 13px;
+  font-size: 0.875rem;
 }
 </style>

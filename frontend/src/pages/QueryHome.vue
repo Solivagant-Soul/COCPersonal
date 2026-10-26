@@ -55,29 +55,29 @@ function go(tag: string, target: 'player' | 'clan' = kind.value) {
   background: var(--surface-panel);
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  padding: 32px 28px;
+  padding: 38px 34px;
   box-shadow: var(--shadow-card);
 }
 .hero__title {
-  margin: 0 0 6px;
-  font-size: 26px;
+  margin: 0 0 8px;
+  font-size: 1.875rem;
   font-weight: 700;
   letter-spacing: -0.5px;
 }
 .hero__lead {
-  margin: 0 0 20px;
+  margin: 0 0 22px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.9375rem;
 }
 .hero__switch {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .hero__input {
-  max-width: 480px;
+  max-width: 540px;
 }
 
 .quick {
-  margin-top: 16px;
+  margin-top: 18px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -85,7 +85,7 @@ function go(tag: string, target: 'player' | 'clan' = kind.value) {
 }
 .quick__label {
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: 0.875rem;
 }
 
 .history {

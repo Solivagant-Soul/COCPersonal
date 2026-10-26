@@ -99,8 +99,8 @@ onMounted(load)
 <style scoped>
 .army-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 20px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -109,8 +109,8 @@ onMounted(load)
 .army-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 14px;
+  padding: 20px;
   background: var(--surface-panel);
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
@@ -125,7 +125,7 @@ onMounted(load)
 }
 
 .army-card__name {
-  font-size: 16px;
+  font-size: 1.0625rem;
   font-weight: 600;
   color: var(--text-primary);
   overflow-wrap: anywhere;
@@ -133,7 +133,7 @@ onMounted(load)
 
 .army-card__percentage {
   flex-shrink: 0;
-  font-size: 18px;
+  font-size: 1.25rem;
   font-weight: 600;
   color: var(--accent-gold);
 }
@@ -146,13 +146,13 @@ onMounted(load)
 }
 
 .army-card__stat dt {
-  font-size: 12px;
+  font-size: 0.8125rem;
   color: var(--text-faint);
 }
 
 .army-card__stat dd {
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: 0.9375rem;
   color: var(--text-primary);
 }
 
@@ -160,7 +160,7 @@ onMounted(load)
   padding: 48px 0;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.9375rem;
 }
 
 .armies-source {

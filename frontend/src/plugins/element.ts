@@ -12,5 +12,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
  * 安装函数，否则「测试里是中文、线上是英文」这种偏差永远发现不了。
  */
 export function installElementPlus(app: App): void {
-  app.use(ElementPlus, { locale: zhCn })
+  // `size: 'large'` 是全局的：按钮、输入框、分页、单选组一起放大，
+  // 与新版更宽松的页面排版保持一致。只在安装处配一次，页面里别再各自传 size。
+  app.use(ElementPlus, { locale: zhCn, size: 'large' })
 }

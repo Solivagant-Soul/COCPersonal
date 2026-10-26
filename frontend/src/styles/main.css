@@ -20,6 +20,12 @@ body,
   margin: 0;
 }
 
+/* 「设置 → 界面字号 → 大」：只改根字号，rem 单位会跟着放大。
+ * 标准档留在 16px（与浏览器默认一致），大档 +12.5%。 */
+html[data-ui-scale='large'] {
+  font-size: 18px;
+}
+
 :root {
   /* ---- 表面 ---- */
   --surface-page: #121214;
@@ -53,14 +59,14 @@ body,
   --accent-positive: #3ad1c0;
   --accent-danger: #e2564a;
 
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-sm: 9px;
 
   --shadow-card: 0 1px 3px #00000038;
   --shadow-card-hover: 0 6px 16px #140e0647;
 
-  --page-max: 1200px;
-  --page-gutter: 20px;
+  --page-max: 1320px;
+  --page-gutter: 28px;
 
   /* ---- Element Plus 变量覆盖 ----
    * 这些是 Element Plus 2.x 认的变量名。改了它们，组件就跟着进深色体系。
@@ -138,20 +144,20 @@ a {
 .page {
   max-width: var(--page-max);
   margin: 0 auto;
-  padding: 24px var(--page-gutter) 48px;
+  padding: 34px var(--page-gutter) 56px;
 }
 
 .page h2 {
-  margin: 0 0 4px;
-  font-size: 24px;
+  margin: 0 0 6px;
+  font-size: 1.75rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .page__hint {
-  margin: 0 0 20px;
+  margin: 0 0 22px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.9375rem;
   line-height: 1.6;
 }
 
@@ -160,8 +166,22 @@ a {
   background: var(--surface-panel);
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 24px;
   box-shadow: var(--shadow-card);
+}
+
+/* 「界面字号 → 大」时 Element Plus 的组件字号跟着抬一档。
+ * 组件库内部写死了 px，只改根字号不会影响它们，所以在这里补一组覆盖。 */
+html[data-ui-scale='large'] .el-button,
+html[data-ui-scale='large'] .el-input__inner,
+html[data-ui-scale='large'] .el-select__selected-item,
+html[data-ui-scale='large'] .el-radio-button__inner,
+html[data-ui-scale='large'] .el-pagination,
+html[data-ui-scale='large'] .el-tabs__item,
+html[data-ui-scale='large'] .el-drawer__title,
+html[data-ui-scale='large'] .el-drawer__body,
+html[data-ui-scale='large'] .el-message__content {
+  font-size: 1rem;
 }
 
 /* 滚动条（WebKit）—— 默认的浅色滚动条在深色背景上很扎眼 */

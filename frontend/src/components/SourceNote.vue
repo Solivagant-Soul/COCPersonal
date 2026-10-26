@@ -12,7 +12,7 @@
 <style scoped>
 .source-note {
   margin: 0;
-  font-size: 12px;
+  font-size: 0.8125rem;
   line-height: 1.6;
   color: var(--text-faint);
 }

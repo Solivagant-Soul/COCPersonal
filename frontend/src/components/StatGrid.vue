@@ -26,10 +26,10 @@ defineProps<{ items: Array<{ label: string; value: string }> }>()
 }
 .stat-grid__label {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.8125rem;
 }
 .stat-grid__value {
-  font-size: 20px;
+  font-size: 1.375rem;
   font-weight: 600;
   margin-top: 4px;
   color: var(--text-primary);

@@ -38,7 +38,7 @@ const message = computed(
 
 <style scoped>
 .error-card__title {
-  font-size: 16px;
+  font-size: 1.0625rem;
   font-weight: 600;
   margin-bottom: 8px;
 }

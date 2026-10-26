@@ -79,14 +79,14 @@ function onClear() {
   margin-bottom: 8px;
 }
 .history__title {
-  font-size: 13px;
+  font-size: 0.875rem;
   color: var(--text-secondary);
 }
 .history__clear {
   border: none;
   background: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 0.875rem;
   color: var(--text-secondary);
   padding: 0;
 }
@@ -116,13 +116,13 @@ function onClear() {
   padding: 5px 10px;
   color: var(--text-primary);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 0.875rem;
 }
 .history__link:hover {
   color: var(--accent-gold);
 }
 .history__kind {
-  font-size: 11px;
+  font-size: 0.75rem;
   padding: 0 5px;
   border-radius: 4px;
   line-height: 16px;
@@ -141,7 +141,7 @@ function onClear() {
   cursor: pointer;
   color: var(--text-faint);
   padding: 4px 10px 4px 0;
-  font-size: 12px;
+  font-size: 0.8125rem;
 }
 .history__remove:hover {
   color: var(--accent-danger);

@@ -107,7 +107,7 @@ function detailRoute(row: RankingRow) {
   padding: 48px 0;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.9375rem;
 }
 
 .ranking-list {
@@ -116,15 +116,15 @@ function detailRoute(row: RankingRow) {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* ---- 卡片 ---- */
 .ranking-card {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
+  gap: 18px;
+  padding: 14px 18px;
   background: var(--surface-panel);
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
@@ -142,11 +142,11 @@ function detailRoute(row: RankingRow) {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 84px;
+  width: 92px;
   flex-shrink: 0;
 }
 .ranking-card__num {
-  font-size: 22px;
+  font-size: 1.5rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
@@ -154,7 +154,7 @@ function detailRoute(row: RankingRow) {
   text-align: right;
 }
 .ranking-card__tier {
-  font-size: 11px;
+  font-size: 0.75rem;
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 4px;
@@ -198,7 +198,7 @@ function detailRoute(row: RankingRow) {
   color: var(--text-primary);
   text-decoration: none;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 1rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -209,7 +209,7 @@ function detailRoute(row: RankingRow) {
 .ranking-card__meta {
   display: flex;
   gap: 10px;
-  font-size: 12px;
+  font-size: 0.8125rem;
   color: var(--text-faint);
   margin-top: 2px;
 }
@@ -220,21 +220,21 @@ function detailRoute(row: RankingRow) {
 /* ---- 指标 ---- */
 .ranking-card__stats {
   display: flex;
-  gap: 24px;
+  gap: 28px;
   flex-shrink: 0;
 }
 .ranking-card__stat {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  min-width: 56px;
+  min-width: 64px;
 }
 .ranking-card__stat-label {
-  font-size: 11px;
+  font-size: 0.75rem;
   color: var(--text-faint);
 }
 .ranking-card__stat-value {
-  font-size: 15px;
+  font-size: 1rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -242,9 +242,9 @@ function detailRoute(row: RankingRow) {
 
 /* ---- 涨跌 ---- */
 .ranking-card__delta {
-  width: 64px;
+  width: 72px;
   text-align: right;
-  font-size: 13px;
+  font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }

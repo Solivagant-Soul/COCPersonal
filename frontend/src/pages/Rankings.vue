@@ -266,26 +266,31 @@ onMounted(fetchRealtime)
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 18px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
 .pager {
-  margin-top: 16px;
+  margin-top: 20px;
   justify-content: flex-end;
+}
+/* 赛季下拉固定宽度：不固定时 Element Plus 的 select 会撑满整行，
+ * 把「部落 / 玩家」挤到下一行，工具栏看起来像断了一截。 */
+.season-select {
+  width: 240px;
 }
 /* 抓取时间：比提示语更弱一档，不跟正文抢注意力 */
 .page__stamp {
   display: inline-block;
   margin-left: 8px;
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: 0.8125rem;
 }
 .season-empty {
   padding: 48px 0;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.9375rem;
 }
 .season-source {
   margin-top: 16px;

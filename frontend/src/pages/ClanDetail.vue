@@ -102,7 +102,7 @@ watch(() => route.params.tag, load, { immediate: true })
   margin: 16px 0 4px;
 }
 .clan-head__name {
-  font-size: 22px;
+  font-size: 1.5rem;
   font-weight: 600;
 }
 .clan-head__tag {
@@ -110,7 +110,7 @@ watch(() => route.params.tag, load, { immediate: true })
 }
 .meta-line {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.8125rem;
   margin-bottom: 8px;
 }
 .clan-desc {
