@@ -46,6 +46,10 @@ npm run dev       # :5173，/api 已反代到 :8000
   `.env` 的 `PUBLIC_BASE_URL` 推导（compose 只能整值插值、没法在 YAML 里解析 URL）。
   直接跑 `docker compose up -d` 会**回落到 80 端口**，站点能开但投稿图片全裂、
   且无任何报错。详见 `docs/deployment.md` §2。
+- **素材图（`frontend/public/pictures/`，gitignored）用 `./deploy/compose.sh sync-assets` 补**：
+  它只跑宿主机上的 `python3`，不碰 docker、不需要 `PUBLIC_BASE_URL`。下载目标**必须**
+  等于 compose 里 nginx 的挂载源，否则站点永远看不到新图（`backend/tests/test_root_deployment_assets.py`
+  钉着这条）。详见 `docs/deployment.md` §14。
 - `.env` 均**不在版本库**（根 `.env` 与 `backend/.env` 都已被忽略）。密钥绝不入库，
   `.env.example` 只放空值占位。
 

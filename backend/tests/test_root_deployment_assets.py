@@ -111,6 +111,50 @@ def test_web_mounts_fankit_pictures_from_host():
     assert "location /pictures/" in conf
 
 
+def _load_fetcher():
+    """把下载脚本当模块加载，只为读它的 OUT_ROOT（导入期没有副作用）。"""
+    import importlib.util
+
+    path = REPO_ROOT / "scripts" / "fetch_fankit_assets.py"
+    spec = importlib.util.spec_from_file_location("fetch_fankit_assets", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_fetcher_writes_into_the_directory_nginx_mounts():
+    """下载目标必须**就是** nginx 挂载的那个宿主目录。
+
+    历史上这两边是分开的：脚本写仓库根 `pictures/`，compose 挂
+    `frontend/public/pictures`。在服务器上跑下载"成功"，站点却永远看不到图，
+    而且不报错 —— 与挂载缺失同一个假成功（见上一个用例）。所以把
+    「脚本的 OUT_ROOT == 挂载源路径」钉成测试。
+    """
+    mount = next(
+        v
+        for v in _compose()["services"]["web"]["volumes"]
+        if v.endswith(":/usr/share/nginx/html/pictures:ro")
+    )
+    host_dir = mount.split(":")[0]  # ./frontend/public/pictures
+    assert _load_fetcher().OUT_ROOT == (REPO_ROOT / host_dir).resolve(), (
+        f"下载脚本的 OUT_ROOT 必须指向挂载源 {host_dir}，否则线上永远看不到新素材"
+    )
+
+
+def test_compose_script_has_sync_assets_subcommand():
+    """`./deploy/compose.sh sync-assets` 必须存在，且转交给下载脚本。
+
+    没有这条子命令时，运维只能凭记忆去跑 `python scripts/fetch_fankit_assets.py`，
+    而脚本路径/解释器名（python3 vs python）在服务器上并不总是想得起来。
+    """
+    text = COMPOSE_SCRIPT.read_text(encoding="utf-8")
+    assert "sync-assets" in text, "deploy/compose.sh 缺 sync-assets 子命令"
+    assert "scripts/fetch_fankit_assets.py" in text, (
+        "sync-assets 必须转交 scripts/fetch_fankit_assets.py"
+    )
+
+
 def test_api_passes_warreport_env():
     """War Report 的上游地址与超时必须能从 .env 透传进容器。
 
@@ -328,3 +372,32 @@ def test_url_without_scheme_fails_loudly(tmp_path: Path):
     )
     assert proc.returncode != 0
     assert "协议" in proc.stderr
+
+
+@requires_bash
+def test_sync_assets_works_without_public_base_url(tmp_path: Path):
+    """`sync-assets` 不该被端口配置挡住 —— 补图与对外端口无关。
+
+    用 `--help` 验证：它由 argparse 在联网/读写之前处理，所以这个用例既证明
+    分支在 PUBLIC_BASE_URL 校验之前，又不会真的去 fankit 下载 246 MB。
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text("POSTGRES_PASSWORD=x\n", encoding="utf-8")
+    env = dict(os.environ)
+    env.pop("PUBLIC_BASE_URL", None)
+    env["ENV_FILE"] = str(env_file)
+    proc = subprocess.run(
+        [BASH, str(COMPOSE_SCRIPT), "sync-assets", "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    assert proc.returncode == 0, (
+        f"sync-assets 在没有 PUBLIC_BASE_URL 时应当照跑，实际退出码 "
+        f"{proc.returncode}：{proc.stderr}"
+    )
+    # 参数要原样透传给下载脚本（这里借 --refresh 证明透传生效）
+    assert "--refresh" in proc.stdout

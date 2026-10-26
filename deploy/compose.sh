@@ -17,8 +17,17 @@
 #   ./deploy/compose.sh up -d            # 等价于 docker compose up -d，端口按 PUBLIC_BASE_URL
 #   ./deploy/compose.sh logs -f web
 #   ./deploy/compose.sh ps
+#   ./deploy/compose.sh sync-assets       # 下载/补齐素材图（不碰 docker，不需要端口）
 #   ./deploy/compose.sh --print-port      # 只打印宿主机端口，不碰 docker（排障/测试用）
 #   ./deploy/compose.sh --print-ports     # 打印两侧：host=<端口> container=<端口>
+#
+# sync-assets
+# -----------
+#   把 Fankit 素材下到 `frontend/public/pictures/` —— 也就是 compose 只读挂载进
+#   nginx 的那个宿主目录。**同一个路径**很关键：下载到别处时命令照样成功，
+#   站点却永远看不到图（`/pictures/...` 回落到 index.html，200 + text/html）。
+#   素材是静态文件，写完即可访问，**不需要重启或重建容器**。
+#   额外参数原样透传给下载脚本：`--list` / `--force` / `--refresh` / `--only army,spell`。
 #
 # 端口规则
 # --------
@@ -162,6 +171,36 @@ derive_port() {
 
     printf '%s' "${port}"
 }
+
+# --------------------------------------------------------------------------- #
+# sync-assets：下载/补齐素材图
+#
+# 刻意放在 PUBLIC_BASE_URL 校验**之前**：补图跟对外端口无关，`.env` 还没配好时
+# 也该能跑（首次部署前先补图是常见顺序）。
+# --------------------------------------------------------------------------- #
+find_python() {
+    local candidate
+    for candidate in python3 python; do
+        command -v "${candidate}" >/dev/null 2>&1 || continue
+        # 光有命令不够：Windows 的 python3 常是应用商店的转发桩，
+        # 存在但一跑就退出 49。真跑一次空语句才算数。
+        if "${candidate}" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
+            printf '%s' "${candidate}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [ "${1:-}" = "sync-assets" ]; then
+    shift
+    if ! python_bin="$(find_python)"; then
+        echo "错误：找不到 python3 或 python，无法下载素材。" >&2
+        echo "      先装一个：apt install python3（Debian/Ubuntu）或 dnf install python3（RHEL 系）" >&2
+        exit 1
+    fi
+    exec "${python_bin}" "${ROOT_DIR}/scripts/fetch_fankit_assets.py" "$@"
+fi
 
 # --------------------------------------------------------------------------- #
 # 主流程

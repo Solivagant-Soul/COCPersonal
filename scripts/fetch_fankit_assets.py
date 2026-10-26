@@ -12,9 +12,11 @@ Fankit 是 Frontify 品牌门户，页面由 JS 渲染，HTML 里拿不到图，
 * 原图：返回的 ``generic_url`` 形如 ``...png?width={width}``，把占位符换成足够
   大的值，CDN 就会回原始文件而不是缩略图
 
-图片按 army / equipment / hero / pet / spell / workshop 六类落到仓库根的
-``pictures/``，文件名用国服官方译名（译名表见 ``CATALOG``）。该目录已在
-``.gitignore`` 中忽略，不要提交进库。
+图片按 army / equipment / hero / pet / spell / workshop 六类落到
+``frontend/public/pictures/``（nginx 只读挂载的就是这个目录），文件名用国服官方
+译名（译名表见 ``CATALOG``）。该目录已在 ``.gitignore`` 中忽略，不要提交进库。
+
+线上补图直接跑 ``./deploy/compose.sh sync-assets``（见 ``docs/deployment.md`` §14）。
 
 用法::
 
@@ -45,7 +47,11 @@ WORKERS = 6
 RETRIES = 3
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT_ROOT = ROOT / "pictures"
+# 必须是 nginx 挂载的那个宿主目录（docker-compose.yml 的 web.volumes）。
+# 下到别处时命令照样成功，但站点永远看不到图：`/pictures/...` 会回落到
+# index.html 返回 200 + text/html。backend/tests/test_root_deployment_assets.py
+# 把「这里 == 挂载源路径」钉成了测试。
+OUT_ROOT = ROOT / "frontend" / "public" / "pictures"
 CACHE = OUT_ROOT / ".fankit-assets.json"
 
 UA = (

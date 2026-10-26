@@ -75,6 +75,7 @@ cd frontend; npm run build           # vue-tsc 类型检查 + 产物到 frontend
 
 ```bash
 cp .env.example .env          # 填 POSTGRES_PASSWORD、ADMIN_USERNAME/PASSWORD/SECRET_KEY、PUBLIC_BASE_URL
+./deploy/compose.sh sync-assets      # 补素材图（约 246 MB，只需宿主机有 python3，不碰 docker）
 ./deploy/compose.sh up -d --build
 
 # 首次部署：建表 + 导入升级数据（空库的升级接口只返回空列表）

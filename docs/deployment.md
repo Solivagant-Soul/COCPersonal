@@ -773,24 +773,47 @@ not endorsed by Supercell.*）。本站同样不是 Supercell 官方站点、未
 
 ## 14. 素材图（Fankit 图标，不进镜像）
 
-`scripts/fetch_fankit_assets.py` 把《部落冲突》图标下到仓库根的 `pictures/`，共
-**129 个文件 / 约 175 MB**，按 `army` / `equipment` / `hero` / `pet` / `spell` /
+`scripts/fetch_fankit_assets.py` 把《部落冲突》图标下到
+**`frontend/public/pictures/`** —— 就是 `web` 容器只读挂载进 nginx 的那个宿主目录。
+当前 **148 个文件 / 约 246 MB**，按 `army` / `equipment` / `hero` / `pet` / `spell` /
 `workshop` 分类，文件名是国服译名。
 
-**这个目录在 `.gitignore` 里**（`.gitignore` 的 `pictures/` 会匹配任意层级，所以
-`frontend/public/pictures/` 同样被忽略）—— 它**不在版本库里，也不在镜像里**。
-线上要让 `/pictures/...` 能访问，必须满足两个条件：
+**这个目录在 `.gitignore` 里**（`.gitignore` 的 `pictures/` 会匹配任意层级）——
+它**不在版本库里，也不在镜像里**。线上要让 `/pictures/...` 能访问，必须满足两个条件：
 
-1. 宿主机的 `frontend/public/pictures/` 存在且有图（`find ... -type f | wc -l` 应为 129）
+1. 宿主机的 `frontend/public/pictures/` 存在且有图（`find ... -type f | wc -l` 应为 148）
 2. `docker-compose.yml` 里 `web.volumes` 的那行只读挂载在：
 
    ```yaml
    - ./frontend/public/pictures:/usr/share/nginx/html/pictures:ro
    ```
 
-   `frontend/.dockerignore` 刻意排除 `public/pictures`，避免 175 MB 灌进构建上下文。
+   `frontend/.dockerignore` 刻意排除 `public/pictures`，避免 246 MB 灌进构建上下文。
 
-改完执行 `./deploy/compose.sh up -d web`（**卷变更必须重建容器**，`nginx -s reload` 不够）。
+### 补图：`./deploy/compose.sh sync-assets`
+
+```bash
+./deploy/compose.sh sync-assets            # 增量补齐（已存在的跳过）
+./deploy/compose.sh sync-assets --list     # 只打印计划，不下载
+./deploy/compose.sh sync-assets --refresh  # 忽略缓存，重抓资源列表
+./deploy/compose.sh sync-assets --force    # 全部重下
+./deploy/compose.sh sync-assets --only army,spell
+```
+
+- 宿主机只需要 `python3`（或 `python`），**不碰 docker、不需要 `PUBLIC_BASE_URL`**
+- 参数原样透传给脚本；脚本非零退出，命令也非零退出（不会假装成功）
+- 素材是静态文件，**写完即可访问，不用重启或重建容器**（bind mount 直接读宿主目录）
+- 缺源清单会打印在命令里（当前只有「传送吊坠」，Fankit 没这张图）
+- 想定时自动补（可选，未预置）：
+  `0 5 * * * cd /path/to/repo && ./deploy/compose.sh sync-assets`
+
+**脚本的 `OUT_ROOT` 和 compose 的挂载源必须是同一个目录**，这条由
+`backend/tests/test_root_deployment_assets.py` 钉死。两边一旦分开（历史上脚本写仓库根
+`pictures/`、compose 挂 `frontend/public/pictures`），服务器上跑下载会"成功"，
+站点却永远看不到新图 —— 同样是不报错的假成功。
+
+改完挂载配置执行 `./deploy/compose.sh up -d web`（**卷变更必须重建容器**，
+`nginx -s reload` 不够）。单纯补图**不需要**这一步。
 
 ### 验证：必须看 Content-Type
 
@@ -826,4 +849,5 @@ curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
 不会让页面裂开。要补图时，文件名必须与名称表里的中文名逐字一致；装备图体积大，
 只在「详情」里以文字展示。
 
-> `git clean -fdx` 会删掉这批图（被忽略的未跟踪文件），重建要重跑下载脚本。
+> `git clean -fdx` 会删掉这批图（被忽略的未跟踪文件），重建跑
+> `./deploy/compose.sh sync-assets` 即可（约 246 MB，几分钟）。
