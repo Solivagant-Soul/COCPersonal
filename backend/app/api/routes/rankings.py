@@ -27,8 +27,8 @@ from app.db.models import CollectorRun, League, Location, Ranking, Season
 
 router = APIRouter(prefix="/api/v1")
 
-#: 全服。官方地区 ID 的高位段是 32000000，Global 是 32000000。
-#: **注意 Global 的 ``isCountry`` 是 false** —— 靠 ``is_country`` 过滤找不到它。
+#: 本系统的**全服 scope**。注意它不是官方地区表里的 32000000（那是 Europe）：
+#: 32000000 只作为库内 scope 使用；上游查询全服一律走虚拟地区 ``global``。
 DEFAULT_LOCATION_ID = 32000000
 
 #: 每种榜单对应的指标字段。前端按 kind 取，不用猜。

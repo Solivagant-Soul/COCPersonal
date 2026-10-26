@@ -150,15 +150,16 @@ Start-Process "C:\pgportable\pgsql\bin\postgres.exe" `
   只给从属关系建 FK 且 `ON DELETE CASCADE`。
 - **榜单刷新一律「按 scope 全量替换」**：同事务内 `DELETE` + 批量 `INSERT`，
   禁止逐条 upsert —— 否则掉榜的条目会永远残留。
-- **榜单只有「全服（32000000）的部落榜与玩家榜」**（2026-10-22 收窄）。
+- **榜单只有「全服（落库 scope 32000000）的部落榜与玩家榜」**（2026-10-22 收窄）。
   都城榜 / 部落基地榜 / 玩家基地榜已停采、路由已删（404）。
-  **注意 Global 的 `isCountry` 是 false** —— 靠 `is_country` 过滤会把它漏掉，
-  「只查全服」最容易写错的就是这一处。赛季榜（`season_players`）是另一条
-  scope（`league_id` + `season_id`，无 `location_id`），不受影响。
-- **玩家榜的上游路径参数是虚拟地区 `global`，不是数字 32000000**（2026-10-23）。
-  `/locations/32000000/rankings/players` 会 404 `Rankings not found for
-  location`，而部落榜用 32000000 正常。落库 scope 两边仍是 32000000；
-  两者在 `app/collector/jobs/rankings.py` 的 `_UPSTREAM_LOCATION` 里分开维护。
+  赛季榜（`season_players`）是另一条 scope（`league_id` + `season_id`，
+  无 `location_id`），不受影响。
+- **32000000 是「欧洲」，不是 Global**（2026-10-26 更正；它的 `isCountry` 也是
+  false，别拿 `is_country` 判断全服）。**部落榜与玩家榜的上游路径参数都必须是
+  虚拟地区 `global`**：`/locations/32000000/rankings/clans` 返回的是 **200 +
+  空 `items`**（线上部落榜一直是空的根因），玩家榜则是 404。落库 scope 与
+  API / 前端契约仍统一是 32000000，只有上游路径参数不同，两者在
+  `app/collector/jobs/rankings.py` 的 `_UPSTREAM_LOCATION` 里分开维护。
 - 所有官方时间戳按 UTC 存 `TIMESTAMPTZ`，**禁止裸 naive datetime**（服务器在大陆，
   naive 会让 TTL 判定偏差 8 小时）。mapper 的 `now` 一律由调用方注入，不在内部取时间。
 - tag 大小写不敏感：入库/比较前统一 `app.coc.tags.normalize_tag()` 归一化为 `#大写`，

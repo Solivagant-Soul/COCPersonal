@@ -241,3 +241,11 @@ frontend/src/
 > `/locations/global/rankings/players` 才是全服玩家榜。两者在
 > `app/collector/jobs/rankings.py` 的 `_UPSTREAM_LOCATION` 里分开维护，
 > API / 前端契约保持 32000000 不变。
+
+> **裁定（2026-10-26，修正上一条）**：**上一条说「同一 ID 用于部落榜却是 200」
+> 只看到了状态码，漏看了 body —— `32000000` 在官方 API 里其实是「欧洲」**
+> （`isCountry` 同样是 false），`/locations/32000000/rankings/clans` 返回
+> `200 {"items":[]}`，所以部落榜落库后一直是空的。**部落榜与玩家榜的上游路径
+> 参数统一为虚拟地区 `global`**；落库 `location_id` 与 API / 前端契约仍是
+> 32000000（库里这个 id 现在只当 scope 标记用，不再声称等于上游 Global）。
+> 守门测试断言上游路径为 `/locations/global/rankings/clans`。

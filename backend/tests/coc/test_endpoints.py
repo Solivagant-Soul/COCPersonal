@@ -357,6 +357,26 @@ async def test_player_rankings_path():
         await client.aclose()
 
 
+async def test_clan_rankings_accepts_global_virtual_location():
+    """全服部落榜也用字符串 ``global``，不是 Europe 的 32000000。
+
+    32000000 对地区榜返回的是 200 + 空列表，不会报错 —— 把它当全服用，
+    结果就是「采集成功但一条部落都没有」。
+    """
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"items": []})
+
+    client = make_client(handler)
+    try:
+        await get_clan_rankings(client, "global", limit=200)
+        assert calls[0] == "/v1/locations/global/rankings/clans?limit=200"
+    finally:
+        await client.aclose()
+
+
 async def test_player_rankings_accepts_global_virtual_location():
     """全服玩家榜的路径参数是字符串 ``global``，不是数字 ID。
 

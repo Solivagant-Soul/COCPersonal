@@ -218,9 +218,14 @@ async def get_location(client: CocClient, location_id: int) -> dict[str, Any]:
 
 
 async def get_clan_rankings(
-    client: CocClient, location_id: int, *, limit: int | None = None
+    client: CocClient, location_id: int | str, *, limit: int | None = None
 ) -> dict[str, Any]:
-    """locationId 走路径；limit 走 query。"""
+    """locationId 走路径；limit 走 query。
+
+    **全服部落榜同样用虚拟地区 ``global``**：数字 ``32000000`` 是 Europe，
+    地区榜对非国家地区返回 **200 + 空 items**（不报错，所以很容易被当成
+    「上游没数据」）。``int | str`` 是为了别在调用方把 ``global`` 强转成 int。
+    """
     params = {"limit": limit} if limit is not None else None
     return await client.get(
         f"/locations/{location_id}/rankings/clans", params=params
@@ -233,8 +238,9 @@ async def get_player_rankings(
     """locationId 走路径；limit 走 query。
 
     **全服玩家榜的 ``location_id`` 是字符串 ``"global"``**：传数字
-    ``32000000`` 会 404 ``Rankings not found for location``（2026-10-23 线上）。
-    部落榜相反，数字 ID 可用 —— 所以这里保留 ``int | str``，**别强转成 int**。
+    ``32000000``（Europe）会 404 ``Rankings not found for location``
+    （2026-10-23 线上）。部落榜后来也统一改成 ``global`` —— 传 32000000
+    虽不 404，但只回空列表。这里保留 ``int | str``，**别强转成 int**。
     """
     params = {"limit": limit} if limit is not None else None
     return await client.get(

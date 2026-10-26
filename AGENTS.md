@@ -65,14 +65,16 @@ npm run dev       # :5173，/api 已反代到 :8000
 - **`backend/app/coc/fixtures/` 四份样本是手搓占位**（带 `_source` / `_todo` 自报身份），
   拿到真实 Supercell Token 后要换掉。
 - **排行榜是夹具种子数据**，真实排名需要 Token + 采集器。
-- **2026-10-22 起：排行榜只刷「全服（32000000）的部落榜与玩家榜」**。
-  都城榜 / 部落基地榜 / 玩家基地榜已停采、路由已删（404）。**注意 Global 的
-  `isCountry` 是 false** —— 靠 `is_country` 过滤会把它漏掉。详见
+- **2026-10-22 起：排行榜只刷「全服（落库 scope 32000000）的部落榜与玩家榜」**。
+  都城榜 / 部落基地榜 / 玩家基地榜已停采、路由已删（404）。详见
   `backend/AGENTS.md` 与规格里的裁定条目。
-- **2026-10-23：全服玩家榜的上游路径是 `/locations/global/rankings/players`**，
-  不是 `/locations/32000000/rankings/players`（后者 404 `Rankings not found for
-  location`；部落榜用 32000000 却是 200）。**落库 scope 仍统一是 32000000**，
-  只有上游路径参数不同，别把两者混成一个值。
+- **2026-10-26 更正：`32000000` 在官方 API 里是「欧洲」，不是 Global**（它的
+  `isCountry` 同样是 false，所以别拿这个字段判断全服）。**部落榜与玩家榜的上游
+  路径参数都必须是虚拟地区 `global`** —— `/locations/32000000/rankings/clans`
+  虽然返回 200，但 `items` 恒为空，这正是线上「部落榜一直是空的」的根因。
+  **落库 scope 与 API / 前端契约仍统一是 32000000**，只有上游路径参数用
+  `global`（见 `backend/app/collector/jobs/rankings.py` 的 `_UPSTREAM_LOCATION`），
+  两者别混成一个值。
 - **2026-10-23：赛季榜与阵容数据来自 War Report（https://warreport.app，无需 Key）**。
   **署名是使用条件**：赛季榜面板、阵容页、全站页脚三处都要保留（`SourceNote.vue` /
   `MainLayout.vue`）。**改这些相关页面前先读 `docs/deployment.md` §12**。

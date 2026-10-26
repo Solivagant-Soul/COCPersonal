@@ -4,11 +4,13 @@
 ``MemoryRateLimiter``），直接被官方限流。限速是 ``CocClient`` 的职责，这一层
 不再自己写 ``sleep``（两处限速叠加会让采集慢到没必要）。
 
-**只刷全服（Global, 32000000）× 2 类榜（部落 / 玩家）**。
+**只刷全服（Global）× 2 类榜（部落 / 玩家）**。
 
-**上游路径参数不一样**：部落榜用数字 ``32000000``，玩家榜必须用虚拟地区
-``global``（数字 ID 会 404 ``Rankings not found for location``）。
-见 ``_UPSTREAM_LOCATION``；落库的 scope 两边都是 ``32000000``。
+**上游路径参数都用虚拟地区 ``global``**。32000000 在官方地区表里是
+**Europe（非国家地区）**，不是 Global；拿它查地区榜会得到 **HTTP 200 + 空
+items**（不报错，所以采集 job 仍显示 success，只是库里永远没有部落榜）。
+这是 2026-10-26 线上「部落榜一直空、玩家榜正常」的根因。
+见 ``_UPSTREAM_LOCATION``；落库的 scope 仍是本系统的 ``32000000``。
 
 - 地区收成 1 个：原先刷所有 ``is_country = true`` 的国家（几十个），逐级地区
   还有几百个。需求收窄成"只看全服榜单"，于是每个 scope 的请求量与库里的
@@ -35,8 +37,9 @@ from app.db.models import Location
 
 logger = logging.getLogger("coc.collector.rankings")
 
-#: 全服。官方地区 ID 的高位段是 32000000，Global 是 32000000（``isCountry=false``，
-#: 所以**不能**靠 ``is_country`` 过滤找出来 —— 那会漏掉它）。
+#: 本系统**落库**用的全服 scope。它与官方地区表里的 32000000 不是同一个概念：
+#: 官方那个是 Europe（``isCountry=false``），所以**不能**靠 ``is_country``
+#: 过滤找全服，也不能拿它当上游路径。
 GLOBAL_LOCATION_ID = 32000000
 
 #: (kind, 拉取函数)。只有部落榜与玩家榜。
@@ -45,15 +48,14 @@ _KIND_FETCHERS = {
     RankingKind.players: coc.get_player_rankings,
 }
 
-#: 每类榜在**上游**用的地区标识（落库的 scope 仍是全服 ``32000000``）。
+#: 每类榜在**上游**用的地区标识（落库的 scope 仍是 ``GLOBAL_LOCATION_ID``）。
 #:
-#: 两者**故意不同**：部落榜用数字 ``32000000`` 正常（实测 200），玩家榜用同一个
-#: 数字会 404 ``Rankings not found for location`` —— 总榜的玩家榜挂在虚拟地区
-#: ``global`` 下（2026-10-23 线上真实采集失败，coc.py 的
-#: ``get_location_players`` 默认值也是 ``global``）。
-#: 别为了"整齐"把两者合并成一个值，否则玩家榜永远刷不出来。
+#: 两者都是虚拟地区 ``global``。官方地区表里的 32000000 是 **Europe**，
+#: 地区榜接口对非国家地区返回 **200 + 空 items** —— 既不会 404 也不会报错，
+#: 于是「部落榜一直空」看起来像上游没数据。2026-10-26 线上按这个根因修正；
+#: 玩家榜在 2026-10-23 已经先一步改成 ``global``。
 _UPSTREAM_LOCATION: dict[RankingKind, str] = {
-    RankingKind.clans: str(GLOBAL_LOCATION_ID),
+    RankingKind.clans: "global",
     RankingKind.players: "global",
 }
 

@@ -500,7 +500,8 @@ async def test_collect_rankings_only_touches_global(session, settings):
 
     clan_calls = [c for c in client.calls if c[1].endswith("/rankings/clans")]
     assert len(clan_calls) == 1
-    assert clan_calls[0][1].startswith("/locations/32000000/"), "只该刷全服"
+    # 上游的「全服」是虚拟地区 global；32000000 是 Europe，查出来是空列表
+    assert clan_calls[0][1] == "/locations/global/rankings/clans", "只该刷全服"
 
 
 async def test_collect_rankings_writes_only_clans_and_players(session, settings):
@@ -527,13 +528,14 @@ async def test_collect_rankings_writes_only_clans_and_players(session, settings)
     }
 
 
-async def test_collect_rankings_uses_global_virtual_location_for_players(session, settings):
-    """玩家榜在上游挂在虚拟地区 ``global`` 下，不是数字 ID 32000000。
+async def test_collect_rankings_uses_global_virtual_location_for_both_boards(
+    session, settings
+):
+    """部落榜与玩家榜在上游都挂在虚拟地区 ``global`` 下，不是数字 ID 32000000。
 
-    2026-10-23 线上实景：``/locations/32000000/rankings/clans`` → 200，
-    ``/locations/32000000/rankings/players`` → 404
-    ``Rankings not found for location``。同一个数字 ID 对玩家榜无效，
-    官方只认 ``global``（coc.py 的 ``get_location_players`` 默认值也是它）。
+    2026-10-26 线上实景：``/locations/32000000/rankings/clans`` → 200 + **空
+    items**（32000000 是 Europe，非国家地区不返回地区榜）。job 因为拿到空列表
+    仍然记 success，最后库里只有玩家榜、部落榜永远为 0。
 
     **落库仍记在全服 32000000 的 scope 下** —— 那是本系统的地区口径，
     与上游的路径参数不是一回事，别把两者混成一个值。
@@ -549,7 +551,7 @@ async def test_collect_rankings_uses_global_virtual_location_for_players(session
 
     clan_paths = [c[1] for c in client.calls if c[1].endswith("/rankings/clans")]
     player_paths = [c[1] for c in client.calls if c[1].endswith("/rankings/players")]
-    assert clan_paths == ["/locations/32000000/rankings/clans"]
+    assert clan_paths == ["/locations/global/rankings/clans"]
     assert player_paths == ["/locations/global/rankings/players"]
 
     rows = (await session.execute(select(Ranking))).scalars().all()
