@@ -984,6 +984,13 @@ GET /v1/locations/32000000/rankings/players?limit=200 -> 404 Rankings not found 
 | 玩家榜 | `32000000` | `404 Rankings not found for location` |
 | 玩家榜 | `global` | 官方唯一入口（coc.py 的 `get_location_players` 默认值即 `global`） |
 
+> **更正（2026-10-26）**：上表的部落榜一行只看状态码，结论是错的。
+> `32000000` 在官方 API 里是**欧洲**（`isCountry` 也是 false），
+> `/locations/32000000/rankings/clans` 是 `200 {"items":[]}` —— 部落榜因此
+> 一直落空表，而采集任务仍报 `success`。两条榜的上游参数都应使用 `global`，
+> 见下方 Task 21。
+
+
 这不是 Token / 代理 / 限流问题：404 的 reason 是「该地区没有这份榜」，
 业务态错误，重试没有意义。
 
@@ -997,6 +1004,37 @@ GET /v1/locations/32000000/rankings/players?limit=200 -> 404 Rankings not found 
   （断言上游路径 + 落库 location_id），
   `tests/coc/test_endpoints.py::test_player_rankings_accepts_global_virtual_location`；
 - `backend/docs/API接口说明.md` 与两份 `AGENTS.md` 记下这条差异。
+
+## Task 21：全服部落榜一直是空的（2026-10-26）
+
+**现象**：线上 `/api/v1/rankings/clans` 一直返回空列表，玩家榜却有数据；
+`/api/v1/meta/freshness` 里 rankings 任务还是 `success`，所以一直没被发现。
+
+**根因**：`32000000` 在官方 API 里是**欧洲**（`isCountry: false`）。区域榜
+对「没有榜单数据的地区」返回 `200 + items: []` 而不是 404，于是部落榜被
+「成功地」替换成空表 —— 2026-10-23 那次只看了状态码就下结论，漏了 body。
+
+**处置**：
+
+- `app/collector/jobs/rankings.py` 的 `_UPSTREAM_LOCATION`：部落榜与玩家榜
+  **都改为 `"global"`**。落库 scope、API、前端契约仍是 32000000；
+- 守门测试：`tests/collector/test_jobs.py` 断言 `/locations/global/rankings/clans`，
+  `tests/coc/test_endpoints.py` 补 global 部落榜路径用例。
+
+**运维跟进**：部署新镜像后必须手动跑一次 `python -m app.cli collect rankings`
+（或等下一次调度）—— 旧路径只会继续写空表。
+
+## Task 22：阵容页标题中文化与配兵可视化（2026-10-26）
+
+- `frontend/src/pages/Armies.vue`：标题经 `armyTitleZh()` 中文化（War Report
+  的 `name` 是英文），复制按钮文案从「阵型链接」改为「阵容链接」；
+- 新增 `frontend/src/data/armyComposition.ts` 本地解析 `armyShareCode`
+  （按 `h/i/d/u/s` 分段；坏段只跳过，不白屏），`components/ArmyComposition.vue`
+  用 `public/pictures` 的素材图预览配兵，「详情」展开每组的数量；
+- 装备图单张可达数 MB，预览不含装备，详情里用文字 + 数量展示；
+  缺图（新兵种 / 新战宠 / 新装备）回落文字瓦片，不阻塞渲染；
+- 图片按中文名匹配，目录与名称表见 `armyComposition.ts`，部署约定见
+  `docs/deployment.md` §14。
 
 
 
