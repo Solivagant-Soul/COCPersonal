@@ -259,6 +259,26 @@ def test_map_player_extracts_league_tier_id():
     assert player.league_tier_id == 29000022
 
 
+def test_map_player_reads_league_tier_key():
+    """官方文档在 /players 上写的是 ``leagueTier``；只认 ``league`` 会静默丢联赛。"""
+    player = map_player(
+        {"tag": "#9QJ8L0", "leagueTier": {"id": 105000036, "name": "Legend I"}},
+        now=NOW,
+    )
+    assert player.league_tier_id == 105000036
+
+
+def test_map_player_keeps_league_object_in_raw_extra():
+    """联赛对象要整份留在 raw_extra：缓存命中时靠它拿名字与图标。
+
+    只落 ``league_tier_id`` 的话，回源那次能显示「传奇联赛 I」，5 分钟后命中
+    缓存就只剩一个 id —— 页面上联赛一栏凭空变空。
+    """
+    league = {"id": 105000036, "name": "Legend I", "iconUrls": {"small": "x.png"}}
+    player = map_player({"tag": "#9QJ8L0", "leagueTier": league}, now=NOW)
+    assert player.raw_extra == {"leagueTier": league}
+
+
 # --------------------------------------------------------------------------- #
 # 地区
 # --------------------------------------------------------------------------- #

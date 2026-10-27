@@ -43,11 +43,15 @@ _CLAN_KNOWN = frozenset({
     "location", "warLeague", "capitalLeague", "requiredBuilderBaseLeague",
     "clanCapital", "chatLanguage", "labels", "badgeUrls", "memberList",
 })
+#: 玩家已映射字段的白名单。**``league`` / ``leagueTier`` 刻意不在内**：
+#: 联赛对象（id + name + iconUrls）要整份留在 ``raw_extra`` 里，缓存命中时才有
+#: 名字和图标可用 —— 只存 ``league_tier_id`` 的话，回源那次能显示"传奇联赛 I"，
+#: 5 分钟后命中缓存就只剩一个 id，页面上联赛一栏会凭空变空。
 _PLAYER_KNOWN = frozenset({
     "tag", "name", "role", "expLevel", "trophies", "bestTrophies",
     "builderBaseTrophies", "requiredTrophies", "warStars", "attackWins",
     "defenseWins", "townHallLevel", "townHallWeaponLevel", "builderHallLevel",
-    "builderBaseLeague", "league", "legendStatistics", "clan", "donations",
+    "builderBaseLeague", "legendStatistics", "clan", "donations",
     "donationsReceived", "achievements", "labels", "versusBattleWins",
     "versusTrophies", "requiredVersusTrophies", "requiredBuilderBaseTrophies",
     "chatLanguage",
@@ -215,6 +219,12 @@ def map_player(data: dict[str, Any], now: dt.datetime) -> Player:
     achievements = data.get("achievements")
     labels = data.get("labels")
     legend = data.get("legendStatistics")
+    # 官方文档在 /players 上写的是 ``leagueTier``，社区实现与我们的老代码用 ``league``。
+    # 两个键都认：只认一个的话，另一个世界线里漏掉的那份会让 league_tier_id 恒为
+    # NULL —— 页面上的联赛永远是空的，而且不报错、不留痕。
+    league = data.get("leagueTier")
+    if not isinstance(league, dict):
+        league = data.get("league")
 
     return Player(
         tag=normalize_tag(data.get("tag") or ""),
@@ -237,7 +247,7 @@ def map_player(data: dict[str, Any], now: dt.datetime) -> Player:
         donations_received=_int_or_none(data.get("donationsReceived")),
         clan_tag=normalize_tag(clan["tag"]) if isinstance(clan, dict) and clan.get("tag") else None,
         clan_name=clan.get("name") if isinstance(clan, dict) else None,
-        league_tier_id=_nested_id(data, "league"),
+        league_tier_id=_int_or_none(league.get("id")) if isinstance(league, dict) else None,
         builder_base_league_id=_nested_id(data, "builderBaseLeague"),
         chat_language_id=_nested_id(data, "chatLanguage"),
         achievements=achievements if isinstance(achievements, list) else None,

@@ -126,6 +126,68 @@ async def test_player_stale_fallback(client, session, fake_coc):
     assert resp.json()["meta"]["cache"] == "STALE"
 
 
+async def test_player_payload_has_same_shape_for_miss_and_hit(client, fake_coc):
+    """回源与命中缓存必须给同一组键。
+
+    早先回源时直接把上游原始 dict 透传，于是 ``troops`` 这类字段"第一次查有、
+    TTL 一过就没了" —— 前端没法依赖，也测不出来。
+    """
+    fake_coc("get_player", PLAYER_PROFILE)
+
+    first = await client.get("/api/v1/players/%239QJ8L0")
+    second = await client.get("/api/v1/players/%239QJ8L0")
+
+    assert first.json()["meta"]["cache"] == "MISS"
+    assert second.json()["meta"]["cache"] == "HIT"
+    assert set(first.json()["data"]) == set(second.json()["data"])
+
+
+async def test_player_exposes_unit_levels_across_cache_states(client, fake_coc):
+    """兵种/法术/英雄练度没有专门的列，从 raw_extra 透出，两条缓存路径都要有。"""
+    payload = {
+        **PLAYER_PROFILE,
+        "troops": [{"name": "Barbarian", "level": 11, "maxLevel": 12, "village": "home"}],
+        "heroes": [{"name": "Barbarian King", "level": 85, "maxLevel": 95, "village": "home"}],
+        "spells": [{"name": "Lightning Spell", "level": 10, "maxLevel": 11, "village": "home"}],
+    }
+    fake_coc("get_player", payload)
+
+    first = (await client.get("/api/v1/players/%239QJ8L0")).json()["data"]
+    second = (await client.get("/api/v1/players/%239QJ8L0")).json()["data"]
+
+    for data in (first, second):
+        assert data["troops"][0]["name"] == "Barbarian"
+        assert data["heroes"][0]["level"] == 85
+        assert data["spells"][0]["maxLevel"] == 11
+
+
+async def test_player_league_resolves_name_and_icon_from_dim_table(client, session, fake_coc):
+    """上游只回 id 时，联赛名字与图标由 ``league_tiers`` 维表补齐（HIT 也一样）。"""
+    from app.db.models import LeagueTier
+
+    icons = {"small": "https://api-assets.clashofclans.com/leagues/small/l.png"}
+    session.add(LeagueTier(id=105000036, name="Legend I", icon_urls=icons))
+    await session.commit()
+
+    fake_coc("get_player", {**PLAYER_PROFILE, "leagueTier": {"id": 105000036}})
+
+    first = (await client.get("/api/v1/players/%239QJ8L0")).json()["data"]
+    second = (await client.get("/api/v1/players/%239QJ8L0")).json()["data"]
+
+    expected = {"id": 105000036, "name": "Legend I", "iconUrls": icons}
+    assert first["league"] == expected
+    assert second["league"] == expected
+
+
+async def test_player_league_falls_back_to_upstream_name(client, fake_coc):
+    """维表里没有（比如联赛 id 是 ``290000xx`` 那套）时，用上游给的名字。"""
+    fake_coc("get_player", PLAYER_PROFILE)
+
+    data = (await client.get("/api/v1/players/%239QJ8L0")).json()["data"]
+    assert data["league"]["id"] == 29000022
+    assert data["league"]["name"] == "Legend League"
+
+
 async def test_verify_player_token_returns_200_with_status(client, monkeypatch):
     monkeypatch.setattr(
         players_routes.coc,
