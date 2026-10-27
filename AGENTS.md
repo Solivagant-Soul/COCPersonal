@@ -24,7 +24,7 @@ python -m app.cli seed-dev-rankings                  # 灌夹具排行（无 Tok
 python -m app.cli import-game-data                   # 升级数据，应产出 2073 行
 
 # 前端（frontend/ 下）
-npm run test      # Vitest，117 个
+npm run test      # Vitest，125 个
 npm run build     # vue-tsc 类型检查 + 产物到 dist/
 npm run dev       # :5173，/api 已反代到 :8000
 ```
