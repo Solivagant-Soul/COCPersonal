@@ -4,6 +4,7 @@ import {
   enumLabel,
   formatBeijingTime,
   formatCompact,
+  formatLeagueName,
   formatNumber,
   formatRelativeTime,
   normalizeTag,
@@ -109,5 +110,30 @@ describe('enumLabel', () => {
     expect(enumLabel('role', 'brandNew')).toBe('brandNew')
     expect(enumLabel('unknownGroup', 'x')).toBe('x')
     expect(enumLabel('role', null)).toBe('-')
+  })
+})
+
+describe('formatLeagueName', () => {
+  it('段位 + 罗马数字翻成中文', () => {
+    expect(formatLeagueName('Legend I')).toBe('传奇 I')
+    expect(formatLeagueName('Titan III')).toBe('泰坦 III')
+  })
+
+  it('档案里的 `X League` 写法也翻（`Legend League` → `传奇联赛`）', () => {
+    expect(formatLeagueName('Legend League')).toBe('传奇联赛')
+    expect(formatLeagueName('Bronze League II')).toBe('青铜 II')
+    expect(formatLeagueName('Silver League')).toBe('白银联赛')
+    expect(formatLeagueName('Unranked')).toBe('未定级')
+  })
+
+  it('其它形态原样返回，不猜', () => {
+    expect(formatLeagueName('Builder Base Bronze I')).toBe('Builder Base Bronze I')
+    expect(formatLeagueName('Builder Base Bronze')).toBe('Builder Base Bronze')
+  })
+
+  it('缺失值一律返回 -', () => {
+    expect(formatLeagueName(null)).toBe('-')
+    expect(formatLeagueName(undefined)).toBe('-')
+    expect(formatLeagueName('')).toBe('-')
   })
 })

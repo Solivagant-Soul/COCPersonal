@@ -22,6 +22,7 @@
       </div>
 
       <SearchHistory />
+      <FavoriteList />
     </section>
   </div>
 </template>
@@ -30,6 +31,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import FavoriteList from '../components/FavoriteList.vue'
 import SearchHistory from '../components/SearchHistory.vue'
 import TagInput from '../components/TagInput.vue'
 import { addHistory } from '../utils/searchHistory'

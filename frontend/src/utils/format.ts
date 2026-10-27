@@ -209,3 +209,48 @@ export function enumLabel(group: string, value: unknown): string {
   if (table && Object.prototype.hasOwnProperty.call(table, key)) return table[key]
   return key
 }
+
+/**
+ * 联赛层级名 → 中文（`Legend I` → `传奇 I`）。
+ *
+ * 官方与 `league_tiers` 维表给的都是英文名，且有两种写法：
+ *   - 玩家档案的 `league.name`：`Legend League` / `Bronze League II` / `Unranked`
+ *   - `leagueTier.name`：`Legend I` / `Titan III`
+ * 两种都认。别的形态（如夜世界的 `Builder Base Bronze I`、或上游换了写法）
+ * **原样返回** —— 猜错了比不翻更糟，用户会看到一个不存在的联赛名。
+ */
+const LEAGUE_TIER_ZH: Record<string, string> = {
+  Bronze: '青铜',
+  Silver: '白银',
+  Gold: '黄金',
+  Crystal: '水晶',
+  Master: '大师',
+  Champion: '冠军',
+  Titan: '泰坦',
+  Legend: '传奇',
+}
+
+const LEAGUE_TIER_RE = /^(Bronze|Silver|Gold|Crystal|Master|Champion|Titan|Legend)\s+(I{1,3}|IV|V)$/
+const LEAGUE_NAMED_RE = /^(Bronze|Silver|Gold|Crystal|Master|Champion|Titan|Legend) League(?: (I{1,3}|IV|V))?$/
+const LEAGUE_MISC_ZH: Record<string, string> = {
+  Unranked: '未定级',
+}
+
+/** 非上述形态原样返回；缺失值按惯例返回 `'-'`。 */
+export function formatLeagueName(name: Formattable): string {
+  if (name === null || name === undefined || name === '') return PLACEHOLDER
+  const text = String(name).trim()
+
+  const tier = LEAGUE_TIER_RE.exec(text)
+  if (tier) return `${LEAGUE_TIER_ZH[tier[1]]} ${tier[2]}`
+
+  const named = LEAGUE_NAMED_RE.exec(text)
+  if (named) {
+    const zh = LEAGUE_TIER_ZH[named[1]]
+    // 「Legend League」是最高段位的总称，加「联赛」二字反而不像段位名
+    if (!named[2]) return named[1] === 'Legend' ? '传奇联赛' : `${zh}联赛`
+    return `${zh} ${named[2]}`
+  }
+
+  return LEAGUE_MISC_ZH[text] ?? text
+}

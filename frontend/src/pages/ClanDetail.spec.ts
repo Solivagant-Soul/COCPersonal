@@ -43,6 +43,7 @@ const okClan = {
 describe('ClanDetail', () => {
   beforeEach(() => {
     vi.mocked(getClan).mockReset()
+    localStorage.clear()
   })
 
   it('成功：渲染部落名、标签与缓存状态', async () => {
@@ -103,5 +104,23 @@ describe('ClanDetail', () => {
 
     expect(w.text()).toContain('Reddit Zulu')
     expect(w.text()).toContain('数据可能过期')
+  })
+
+  it('详情页有「返回」按钮', async () => {
+    vi.mocked(getClan).mockResolvedValue(okClan as never)
+
+    const w = await mountAt()
+
+    expect(w.find('.page-back').exists()).toBe(true)
+  })
+
+  it('关注按钮：点击后写入本地存储并变成「已关注」', async () => {
+    vi.mocked(getClan).mockResolvedValue(okClan as never)
+
+    const w = await mountAt()
+    await w.find('.follow-btn').trigger('click')
+
+    expect(w.find('.follow-btn').text()).toContain('已关注')
+    expect(localStorage.getItem('cocpersonal.favorites')).toContain('#2PP')
   })
 })

@@ -13,6 +13,29 @@ export interface ClanRef {
   name?: string | null
 }
 
+/** 联赛（层级）：`id` 必有，`name` / `iconUrls` 由后端尽量补齐。 */
+export interface LeagueRef {
+  id?: number | null
+  name?: string | null
+  iconUrls?: Record<string, string> | null
+}
+
+/** 兵种 / 法术 / 英雄的练度行。上游只给英文名，中文名映射在前端素材表里。 */
+export interface UnitLevelRow {
+  name: string
+  level?: number | null
+  maxLevel?: number | null
+  village?: string | null
+  [key: string]: unknown
+}
+
+/** 传奇杯统计里的单个赛季。 */
+export interface LegendSeason {
+  id?: string | null
+  rank?: number | null
+  trophies?: number | null
+}
+
 export interface PlayerProfile {
   tag: string
   name?: string | null
@@ -21,13 +44,24 @@ export interface PlayerProfile {
   bestTrophies?: number | null
   builderBaseTrophies?: number | null
   townHallLevel?: number | null
+  townHallWeaponLevel?: number | null
   builderHallLevel?: number | null
   warStars?: number | null
   attackWins?: number | null
   defenseWins?: number | null
+  donations?: number | null
+  donationsReceived?: number | null
   clan?: ClanRef | null
   role?: string | null
-  league?: { id?: number | null } | null
+  league?: LeagueRef | null
+  builderBaseLeague?: { id?: number | null; name?: string | null } | null
+  achievements?: unknown[] | null
+  labels?: unknown[] | null
+  legendStatistics?: Record<string, unknown> | null
+  troops?: UnitLevelRow[] | null
+  heroes?: UnitLevelRow[] | null
+  spells?: UnitLevelRow[] | null
+  heroEquipment?: UnitLevelRow[] | null
   [key: string]: unknown
 }
 
