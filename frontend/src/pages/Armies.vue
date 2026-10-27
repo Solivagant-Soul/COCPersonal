@@ -1,56 +1,58 @@
 <template>
   <div class="page">
-    <h2>阵容</h2>
-    <p class="page__hint">数据来自 War Report，统计对象为前 200 名传奇联赛玩家</p>
+    <section class="page-card">
+      <h2 class="page-card__title">阵容</h2>
+      <p class="page-card__lead">数据来自 War Report，统计对象为前 200 名传奇联赛玩家</p>
 
-    <LoadingBlock v-if="loading" />
-    <ErrorCard v-else-if="error" :error="error" @retry="load" />
+      <LoadingBlock v-if="loading" />
+      <ErrorCard v-else-if="error" :error="error" @retry="load" />
 
-    <template v-else>
-      <p v-if="!armies.length" class="armies-empty">暂无数据</p>
-      <ul v-else class="army-grid">
-        <li v-for="army in armies" :key="army.canonicalKey" class="army-card">
-          <div class="army-card__head">
-            <span class="army-card__name">
-              <span class="army-card__position">{{ String(army.position).padStart(2, '0') }}</span>
-              {{ armyTitleZh(army.name) }}
-            </span>
-            <span class="army-card__percentage">{{ army.percentage.toFixed(1) }}%</span>
-          </div>
-
-          <dl class="army-card__stats">
-            <div class="army-card__stat">
-              <dt>使用次数</dt>
-              <dd>{{ army.useCount }}</dd>
+      <template v-else>
+        <p v-if="!armies.length" class="armies-empty">暂无数据</p>
+        <ul v-else class="army-grid">
+          <li v-for="army in armies" :key="army.canonicalKey" class="army-card">
+            <div class="army-card__head">
+              <span class="army-card__name">
+                <span class="army-card__position">{{ String(army.position).padStart(2, '0') }}</span>
+                {{ armyTitleZh(army.name) }}
+              </span>
+              <span class="army-card__percentage">{{ army.percentage.toFixed(1) }}%</span>
             </div>
-            <div class="army-card__stat">
-              <dt>玩家数</dt>
-              <dd>{{ army.playerCount }}</dd>
-            </div>
-            <div class="army-card__stat">
-              <dt>平均星级</dt>
-              <dd>{{ army.averageStars.toFixed(2) }}</dd>
-            </div>
-            <div class="army-card__stat">
-              <dt>平均摧毁率</dt>
-              <dd>{{ army.averageDestruction.toFixed(2) }}</dd>
-            </div>
-          </dl>
 
-          <ArmyComposition :share-code="army.armyShareCode" />
+            <dl class="army-card__stats">
+              <div class="army-card__stat">
+                <dt>使用次数</dt>
+                <dd>{{ army.useCount }}</dd>
+              </div>
+              <div class="army-card__stat">
+                <dt>玩家数</dt>
+                <dd>{{ army.playerCount }}</dd>
+              </div>
+              <div class="army-card__stat">
+                <dt>平均星级</dt>
+                <dd>{{ army.averageStars.toFixed(2) }}</dd>
+              </div>
+              <div class="army-card__stat">
+                <dt>平均摧毁率</dt>
+                <dd>{{ army.averageDestruction.toFixed(2) }}</dd>
+              </div>
+            </dl>
 
-          <el-button
-            class="army-card__copy"
-            :aria-label="`复制 ${armyTitleZh(army.name)} 的阵容链接`"
-            @click="copyLink(army.armyLink)"
-          >
-            复制阵容链接
-          </el-button>
-        </li>
-      </ul>
-    </template>
+            <ArmyComposition :share-code="army.armyShareCode" />
 
-    <!-- 署名固定渲染，加载中 / 出错 / 空列表都要有 -->
+            <el-button
+              class="army-card__copy"
+              :aria-label="`复制 ${armyTitleZh(army.name)} 的阵容链接`"
+              @click="copyLink(army.armyLink)"
+            >
+              复制阵容链接
+            </el-button>
+          </li>
+        </ul>
+      </template>
+    </section>
+
+    <!-- 署名固定渲染，加载中 / 出错 / 空列表都要有；放在卡片外，不随内容被裁 -->
     <SourceNote class="armies-source" />
   </div>
 </template>
@@ -118,10 +120,10 @@ onMounted(load)
   flex-direction: column;
   gap: 14px;
   padding: 20px;
-  background: var(--surface-panel);
+  /* 卡片已经在大面板里了：内层用浅一档的底色区分层次，不再叠一层阴影 */
+  background: var(--surface-subtle);
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
 }
 
 .army-card__head {

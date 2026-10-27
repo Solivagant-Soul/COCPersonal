@@ -65,8 +65,8 @@ html[data-ui-scale='large'] {
   --shadow-card: 0 1px 3px #00000038;
   --shadow-card-hover: 0 6px 16px #140e0647;
 
-  --page-max: 1320px;
-  --page-gutter: 28px;
+  --page-max: 1440px;
+  --page-gutter: 24px;
 
   /* ---- Element Plus 变量覆盖 ----
    * 这些是 Element Plus 2.x 认的变量名。改了它们，组件就跟着进深色体系。
@@ -168,6 +168,58 @@ a {
   border-radius: var(--radius);
   padding: 24px;
   box-shadow: var(--shadow-card);
+}
+
+/**
+ * 页面卡片：四个一级页签共用的「一页一张卡」外壳。
+ *
+ * 结构固定为 标题 → 说明 → 操作行 →（可选）分隔线 → 内容：
+ * 各页只往卡里塞自己的内容，标题与说明的字号、间距不再各写一份。
+ * 选择器带上 `.page` 前缀是为了压过上面的 `.page h2`（1.75rem/600）。
+ */
+.page-card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 32px 34px;
+  box-shadow: var(--shadow-card);
+}
+
+.page .page-card__title {
+  margin: 0 0 8px;
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+}
+
+.page-card__lead {
+  margin: 0 0 22px;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+/* 操作行：切换器 / 输入框 / 按钮 / 下拉都在这一行里，窄屏自动换行 */
+.page-card__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* 分隔线：把「操作区」和「结果 / 历史」分开 */
+.page-card__divider {
+  margin: 24px 0 20px;
+  border: 0;
+  border-top: 1px solid var(--border-default);
+}
+
+/* 窄屏：内边距收一档，否则小屏上内容被挤成一条 */
+@media (max-width: 640px) {
+  .page-card {
+    padding: 22px 18px;
+  }
 }
 
 /* 「界面字号 → 大」时 Element Plus 的组件字号跟着抬一档。

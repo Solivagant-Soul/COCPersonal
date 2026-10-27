@@ -69,17 +69,21 @@ function onClear() {
 </script>
 
 <style scoped>
+/* 卡片内的「最近查询」区块：顶部一道细线把它和上面的查询表单分开，
+ * 没有历史时整块不渲染，卡片也就不会留一条孤零零的分隔线。 */
 .history {
   margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-default);
 }
 .history__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .history__title {
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   color: var(--text-secondary);
 }
 .history__clear {
@@ -99,33 +103,41 @@ function onClear() {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
+/* 胶囊 chip：类型徽章 + 标签号 + 删除，三段共用一条底 */
 .history__item {
   display: flex;
   align-items: center;
-  background: var(--surface-panel);
+  background: var(--surface-subtle);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   overflow: hidden;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.history__item:hover {
+  border-color: var(--border-strong);
 }
 .history__link {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
+  gap: 8px;
+  padding: 6px 4px 6px 12px;
   color: var(--text-primary);
   text-decoration: none;
   font-size: 0.875rem;
+  white-space: nowrap;
 }
 .history__link:hover {
   color: var(--accent-gold);
 }
 .history__kind {
   font-size: 0.75rem;
-  padding: 0 5px;
+  padding: 0 6px;
   border-radius: 4px;
-  line-height: 16px;
+  line-height: 18px;
 }
 .history__kind--player {
   background: #e0a03026;
@@ -140,8 +152,9 @@ function onClear() {
   background: none;
   cursor: pointer;
   color: var(--text-faint);
-  padding: 4px 10px 4px 0;
+  padding: 6px 12px 6px 6px;
   font-size: 0.8125rem;
+  line-height: 1;
 }
 .history__remove:hover {
   color: var(--accent-danger);

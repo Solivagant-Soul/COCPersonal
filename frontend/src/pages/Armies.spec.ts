@@ -115,6 +115,19 @@ describe('Armies', () => {
     )
   })
 
+  it('用与其他页签一致的卡片外壳：标题、说明与阵容都在同一张卡里', async () => {
+    const w = mountArmies()
+    await flushPromises()
+
+    expect(w.findAll('.page-card')).toHaveLength(1)
+    const card = w.find('.page-card')
+    expect(card.find('.page-card__title').text()).toBe('阵容')
+    expect(card.find('.page-card__lead').exists()).toBe(true)
+    expect(card.findAll('.army-card')).toHaveLength(1)
+    // 署名是使用条件，必须留在卡片外（不随内容滚动/裁切）
+    expect(card.find('.source-note').exists()).toBe(false)
+  })
+
   it('空数据显示空态', async () => {
     vi.mocked(getArmies).mockResolvedValue({
       data: { items: [] },

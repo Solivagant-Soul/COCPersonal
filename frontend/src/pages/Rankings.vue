@@ -1,95 +1,100 @@
 <template>
   <div class="page">
-    <h2>排行榜</h2>
+    <section class="page-card">
+      <h2 class="page-card__title">排行榜</h2>
+      <p class="page-card__lead">
+        查看全服部落与玩家的实时排名，或按赛季快照翻看历史榜单。
+      </p>
 
-    <el-tabs v-model="view">
-      <!--
-        实时榜：两套状态与赛季面板完全独立 —— 共用 entity / page / rows 的话，
-        在赛季面板切部落/玩家会把实时榜也重拉一遍，两个 loading 还会互相覆盖。
-      -->
-      <el-tab-pane label="实时榜" name="realtime">
-        <p class="page__hint">
-          全服 · 线上经 RoyaleAPI 代理，约每 6 小时刷新
-          <span v-if="realtimeFetchedAt" class="page__stamp">
-            数据更新于 {{ formatBeijingTime(realtimeFetchedAt) }}
-          </span>
-        </p>
+      <el-tabs v-model="view">
+        <!--
+          实时榜：两套状态与赛季面板完全独立 —— 共用 entity / page / rows 的话，
+          在赛季面板切部落/玩家会把实时榜也重拉一遍，两个 loading 还会互相覆盖。
+        -->
+        <el-tab-pane label="实时榜" name="realtime">
+          <p class="page__hint">
+            全服 · 线上经 RoyaleAPI 代理，约每 6 小时刷新
+            <span v-if="realtimeFetchedAt" class="page__stamp">
+              数据更新于 {{ formatBeijingTime(realtimeFetchedAt) }}
+            </span>
+          </p>
 
-        <div class="toolbar">
-          <el-radio-group v-model="realtimeEntity">
-            <el-radio-button v-for="opt in ENTITY_OPTIONS" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </el-radio-button>
-          </el-radio-group>
-        </div>
+          <div class="toolbar">
+            <el-radio-group v-model="realtimeEntity">
+              <el-radio-button v-for="opt in ENTITY_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </div>
 
-        <LoadingBlock v-if="realtimeLoading" />
-        <ErrorCard v-else-if="realtimeError" :error="realtimeError" @retry="fetchRealtime" />
+          <LoadingBlock v-if="realtimeLoading" />
+          <ErrorCard v-else-if="realtimeError" :error="realtimeError" @retry="fetchRealtime" />
 
-        <template v-else>
-          <RankingTable :rows="realtimeRows" :entity="realtimeEntity" />
-          <el-pagination
-            v-model:current-page="realtimePage"
-            v-model:page-size="realtimePageSize"
-            class="pager"
-            :page-sizes="[20, 50, 100]"
-            :total="realtimeTotal"
-            layout="total, sizes, prev, pager, next"
-            @current-change="fetchRealtime"
-            @size-change="onRealtimeSizeChange"
-          />
-        </template>
-      </el-tab-pane>
-
-      <!-- 必须 lazy：否则首屏会把两个面板都挂上，白打一次赛季接口。 -->
-      <el-tab-pane label="赛季榜" name="season" lazy>
-        <p class="page__hint">按赛季快照查看历史榜单，数据来自 War Report。</p>
-
-        <div class="toolbar">
-          <el-select
-            v-model="seasonSnapshot"
-            class="season-select"
-            placeholder="选择赛季"
-            :disabled="!seasons.length"
-          >
-            <el-option
-              v-for="s in seasons"
-              :key="s.seasonId"
-              :label="s.seasonId"
-              :value="s.seasonId"
+          <template v-else>
+            <RankingTable :rows="realtimeRows" :entity="realtimeEntity" />
+            <el-pagination
+              v-model:current-page="realtimePage"
+              v-model:page-size="realtimePageSize"
+              class="pager"
+              :page-sizes="[20, 50, 100]"
+              :total="realtimeTotal"
+              layout="total, sizes, prev, pager, next"
+              @current-change="fetchRealtime"
+              @size-change="onRealtimeSizeChange"
             />
-          </el-select>
+          </template>
+        </el-tab-pane>
 
-          <el-radio-group v-model="seasonEntity">
-            <el-radio-button v-for="opt in ENTITY_OPTIONS" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </el-radio-button>
-          </el-radio-group>
-        </div>
+        <!-- 必须 lazy：否则首屏会把两个面板都挂上，白打一次赛季接口。 -->
+        <el-tab-pane label="赛季榜" name="season" lazy>
+          <p class="page__hint">按赛季快照查看历史榜单，数据来自 War Report。</p>
 
-        <LoadingBlock v-if="seasonsLoading || seasonLoading" />
-        <ErrorCard v-else-if="seasonsError" :error="seasonsError" @retry="loadSeasons" />
-        <ErrorCard v-else-if="seasonError" :error="seasonError" @retry="fetchSeason" />
-        <div v-else-if="!seasons.length" class="season-empty">暂无赛季数据</div>
+          <div class="toolbar">
+            <el-select
+              v-model="seasonSnapshot"
+              class="season-select"
+              placeholder="选择赛季"
+              :disabled="!seasons.length"
+            >
+              <el-option
+                v-for="s in seasons"
+                :key="s.seasonId"
+                :label="s.seasonId"
+                :value="s.seasonId"
+              />
+            </el-select>
 
-        <template v-else>
-          <RankingTable :rows="seasonRows" :entity="seasonEntity" />
-          <el-pagination
-            v-model:current-page="seasonPage"
-            v-model:page-size="seasonPageSize"
-            class="pager"
-            :page-sizes="[20, 50, 100]"
-            :total="seasonTotal"
-            layout="total, sizes, prev, pager, next"
-            @current-change="fetchSeason"
-            @size-change="onSeasonSizeChange"
-          />
-        </template>
+            <el-radio-group v-model="seasonEntity">
+              <el-radio-button v-for="opt in ENTITY_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </div>
 
-        <!-- 署名固定渲染，空列表也要有 -->
-        <SourceNote class="season-source" />
-      </el-tab-pane>
-    </el-tabs>
+          <LoadingBlock v-if="seasonsLoading || seasonLoading" />
+          <ErrorCard v-else-if="seasonsError" :error="seasonsError" @retry="loadSeasons" />
+          <ErrorCard v-else-if="seasonError" :error="seasonError" @retry="fetchSeason" />
+          <div v-else-if="!seasons.length" class="season-empty">暂无赛季数据</div>
+
+          <template v-else>
+            <RankingTable :rows="seasonRows" :entity="seasonEntity" />
+            <el-pagination
+              v-model:current-page="seasonPage"
+              v-model:page-size="seasonPageSize"
+              class="pager"
+              :page-sizes="[20, 50, 100]"
+              :total="seasonTotal"
+              layout="total, sizes, prev, pager, next"
+              @current-change="fetchSeason"
+              @size-change="onSeasonSizeChange"
+            />
+          </template>
+
+          <!-- 署名固定渲染，空列表也要有 -->
+          <SourceNote class="season-source" />
+        </el-tab-pane>
+      </el-tabs>
+    </section>
   </div>
 </template>
 

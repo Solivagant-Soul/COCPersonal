@@ -129,6 +129,19 @@ describe('Rankings', () => {
     expect(w.find('.toolbar__select').exists()).toBe(false)
   })
 
+  it('用与其他页签一致的卡片外壳：标题、说明与榜单内容都在同一张卡里', async () => {
+    const w = await mountRankings()
+
+    expect(w.findAll('.page-card')).toHaveLength(1)
+    const card = w.find('.page-card')
+    expect(card.find('.page-card__title').text()).toBe('排行榜')
+    expect(card.find('.page-card__lead').exists()).toBe(true)
+    // 榜单切换器、工具行与表格都在卡内
+    expect(card.find('.el-tabs').exists()).toBe(true)
+    expect(card.find('.toolbar').exists()).toBe(true)
+    expect(card.text()).toContain('Reddit Zulu')
+  })
+
   it('实时榜显示 meta.fetchedAt（北京时间），这是「榜单多久以前抓的」', async () => {
     const w = await mountRankings()
 

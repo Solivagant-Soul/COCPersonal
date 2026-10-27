@@ -35,6 +35,41 @@ function tagInput(w: ReturnType<typeof mountPage>) {
   return w.find('input[type="text"]')
 }
 
+describe('QueryHome 卡片外壳', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    router.push('/')
+  })
+
+  it('标题、说明、切换器、输入框与查询按钮收在同一张卡片里', () => {
+    const w = mountPage()
+
+    const card = w.find('.page-card')
+    expect(card.exists()).toBe(true)
+    expect(card.find('.page-card__title').text()).toBe('查询')
+    expect(card.find('.page-card__lead').exists()).toBe(true)
+
+    // 操作区必须是一行：切玩家/部落、输入框、查询按钮同处其中
+    const toolbar = card.find('.page-card__toolbar')
+    expect(toolbar.exists()).toBe(true)
+    expect(toolbar.find('input[type="text"]').exists()).toBe(true)
+    expect(toolbar.findAll('button').some((b) => b.text() === '查询')).toBe(true)
+  })
+
+  it('最近查询与查询表单在同一张卡片里，全页只有一张卡', async () => {
+    localStorage.setItem(
+      'cocpersonal.searchHistory',
+      JSON.stringify([{ tag: '#AAA', kind: 'player', at: 1 }]),
+    )
+
+    const w = mountPage()
+    await flushPromises()
+
+    expect(w.findAll('.page-card')).toHaveLength(1)
+    expect(w.find('.page-card .history').exists()).toBe(true)
+  })
+})
+
 describe('QueryHome 搜索历史', () => {
   beforeEach(() => {
     localStorage.clear()
