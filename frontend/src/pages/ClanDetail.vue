@@ -1,11 +1,13 @@
 <template>
   <div class="page">
-    <h2>部落详情</h2>
+    <section class="page-card">
+      <!-- 标题是档案的主身份：查到谁就显示谁，没名字退回标签 -->
+      <h2 class="page-card__title">{{ clan ? clan.name || clan.tag : '部落详情' }}</h2>
+      <p class="page-card__lead">
+        <template v-if="clan">{{ clan.tag }} · 缓存状态：{{ meta?.cache ?? '-' }}</template>
+        <template v-else>按标签查询部落档案，支持全角＃、小写、省略 #。</template>
+      </p>
 
-    <LoadingBlock v-if="loading" />
-    <ErrorCard v-else-if="error" :error="error" @retry="load" />
-
-    <template v-else-if="clan">
       <el-alert
         v-if="isStale"
         type="warning"
@@ -15,19 +17,16 @@
         description="上游暂时不可用，下面是最近一次成功采集的数据。"
       />
 
-      <div class="detail-card">
-        <div class="clan-head">
-          <span class="clan-head__name">{{ clan.name || clan.tag }}</span>
-          <span class="clan-head__tag">{{ clan.tag }}</span>
-        </div>
+      <LoadingBlock v-if="loading" />
+      <ErrorCard v-else-if="error" :error="error" @retry="load" />
 
-        <div class="meta-line">缓存状态：{{ meta?.cache ?? '-' }}</div>
-
+      <template v-else-if="clan">
         <p v-if="clan.description" class="clan-desc">{{ clan.description }}</p>
 
+        <hr class="page-card__divider" />
         <StatGrid :items="stats" />
-      </div>
-    </template>
+      </template>
+    </section>
   </div>
 </template>
 
@@ -88,32 +87,10 @@ watch(() => route.params.tag, load, { immediate: true })
 </script>
 
 <style scoped>
-.detail-card {
-  background: var(--surface-panel);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: var(--shadow-card);
-}
-.clan-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin: 16px 0 4px;
-}
-.clan-head__name {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-.clan-head__tag {
-  color: var(--text-secondary);
-}
-.meta-line {
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  margin-bottom: 8px;
-}
 .clan-desc {
-  color: var(--text-regular, #d4d4d8);
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  line-height: 1.7;
 }
 </style>

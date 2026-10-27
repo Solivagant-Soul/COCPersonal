@@ -1,11 +1,13 @@
 <template>
   <div class="page">
-    <h2>玩家详情</h2>
+    <section class="page-card">
+      <!-- 标题是档案的主身份：查到谁就显示谁，没名字退回标签 -->
+      <h2 class="page-card__title">{{ profile ? profile.name || profile.tag : '玩家详情' }}</h2>
+      <p class="page-card__lead">
+        <template v-if="profile">{{ profile.tag }} · 缓存状态：{{ meta?.cache ?? '-' }}</template>
+        <template v-else>按标签查询玩家档案，支持全角＃、小写、省略 #。</template>
+      </p>
 
-    <LoadingBlock v-if="loading" />
-    <ErrorCard v-else-if="error" :error="error" @retry="load" />
-
-    <template v-else-if="profile">
       <el-alert
         v-if="isStale"
         type="warning"
@@ -15,14 +17,11 @@
         description="上游暂时不可用，下面是最近一次成功采集的数据。"
       />
 
-      <div class="detail-card">
-        <div class="profile-head">
-          <span class="profile-head__name">{{ profile.name || profile.tag }}</span>
-          <span class="profile-head__tag">{{ profile.tag }}</span>
-        </div>
+      <LoadingBlock v-if="loading" />
+      <ErrorCard v-else-if="error" :error="error" @retry="load" />
 
-        <div class="meta-line">缓存状态：{{ meta?.cache ?? '-' }}</div>
-
+      <template v-else-if="profile">
+        <hr class="page-card__divider" />
         <StatGrid :items="stats" />
 
         <div v-if="profile.clan" class="clan-ref">
@@ -31,8 +30,8 @@
             {{ profile.clan.name || profile.clan.tag }}
           </router-link>
         </div>
-      </div>
-    </template>
+      </template>
+    </section>
   </div>
 </template>
 
@@ -91,31 +90,6 @@ watch(() => route.params.tag, load, { immediate: true })
 </script>
 
 <style scoped>
-.detail-card {
-  background: var(--surface-panel);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: var(--shadow-card);
-}
-.profile-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin: 16px 0 4px;
-}
-.profile-head__name {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-.profile-head__tag {
-  color: var(--text-secondary);
-}
-.meta-line {
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  margin-bottom: 8px;
-}
 .clan-ref {
   margin-top: 8px;
 }

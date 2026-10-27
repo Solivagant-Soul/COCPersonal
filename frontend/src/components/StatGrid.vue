@@ -19,7 +19,8 @@ defineProps<{ items: Array<{ label: string; value: string }> }>()
   margin: 16px 0;
 }
 .stat-grid__cell {
-  background: var(--surface-panel);
+  /* 详情页已经是大面板了：格子用浅一档底色，否则和面板同色只剩一圈边框 */
+  background: var(--surface-subtle);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   padding: 12px;

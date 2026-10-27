@@ -80,4 +80,42 @@ describe('PlayerDetail', () => {
     expect(w.text()).toContain('响应格式异常')
     expect(w.text().trim().length).toBeGreaterThan(0)
   })
+
+  it('成功时用统一卡片外壳：一张卡里放标题、标签与缓存状态', async () => {
+    vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
+
+    const w = await mountAt()
+
+    expect(w.findAll('.page-card')).toHaveLength(1)
+    const card = w.find('.page-card')
+    // 标题是玩家名，标签与缓存状态降级到说明行
+    expect(card.find('.page-card__title').text()).toBe('Vasilije')
+    expect(card.find('.page-card__lead').text()).toContain('#9QJ8L0')
+    expect(card.find('.page-card__lead').text()).toContain('HIT')
+    expect(card.find('.stat-grid').exists()).toBe(true)
+    // 不再卡片套卡片
+    expect(w.find('.detail-card').exists()).toBe(false)
+  })
+
+  it('没名字时标题退回标签', async () => {
+    vi.mocked(getPlayer).mockResolvedValue({
+      ...okPlayer,
+      data: { ...okPlayer.data, name: '' },
+    } as never)
+
+    const w = await mountAt()
+
+    expect(w.find('.page-card__title').text()).toBe('#9QJ8L0')
+  })
+
+  it('出错时标题仍是「玩家详情」，错误卡片在卡内', async () => {
+    vi.mocked(getPlayer).mockRejectedValue(
+      new ApiError('PLAYER_NOT_FOUND', 'player not found', 404),
+    )
+
+    const w = await mountAt()
+
+    expect(w.find('.page-card__title').text()).toBe('玩家详情')
+    expect(w.find('.page-card .error-card').exists()).toBe(true)
+  })
 })
