@@ -36,6 +36,35 @@ export interface LegendSeason {
   trophies?: number | null
 }
 
+/**
+ * 一支队伍里的子列表。后端只透传官方认识的槽位（troops / spells / heroes /
+ * pets / equipment），前端只用到前三组的图标。
+ */
+export interface BattleArmy {
+  troops?: UnitLevelRow[] | null
+  spells?: UnitLevelRow[] | null
+  heroes?: UnitLevelRow[] | null
+  pets?: UnitLevelRow[] | null
+  equipment?: UnitLevelRow[] | null
+}
+
+/** `attack` = 我们打的，`defense` = 别人打我们。 */
+export type BattleKind = 'attack' | 'defense'
+
+/** 官方 battlelog 的一条战报（后端已归一化，按时间倒序）。 */
+export interface PlayerBattle {
+  timestamp?: string | null
+  kind: BattleKind
+  stars?: number | null
+  destructionPercentage?: number | null
+  opponent?: { tag?: string | null; name?: string | null } | null
+  army?: BattleArmy | null
+}
+
+export interface PlayerBattlesPage {
+  items: PlayerBattle[]
+}
+
 export interface PlayerProfile {
   tag: string
   name?: string | null
@@ -182,6 +211,13 @@ export interface ArmyRow {
 
 export function getPlayer(tag: string): Promise<Envelope<PlayerProfile>> {
   return request<PlayerProfile>(`/api/v1/players/${encodeURIComponent(tag)}`)
+}
+
+/** 最近的传奇联赛战报。非传奇玩家返回空列表（不是错误）。 */
+export function getPlayerBattles(tag: string): Promise<Envelope<PlayerBattlesPage>> {
+  return request<PlayerBattlesPage>(
+    `/api/v1/players/${encodeURIComponent(tag)}/battles`,
+  )
 }
 
 export function getClan(tag: string): Promise<Envelope<ClanDetail>> {

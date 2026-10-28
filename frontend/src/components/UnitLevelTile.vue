@@ -1,5 +1,9 @@
 <template>
-  <span class="unit-tile" :class="{ 'unit-tile--max': isMax }" :title="title">
+  <span
+    class="unit-tile"
+    :class="{ 'unit-tile--max': isMax, 'unit-tile--small': size === 'small' }"
+    :title="title"
+  >
     <img
       v-if="asset && !failed"
       class="unit-tile__image"
@@ -33,8 +37,10 @@ const props = withDefaults(
     name: string
     level?: number | null
     maxLevel?: number | null
+    /** ``small`` 用于战报这类密集列表：36px → 30px。 */
+    size?: 'normal' | 'small'
   }>(),
-  { level: null, maxLevel: null },
+  { level: null, maxLevel: null, size: 'normal' },
 )
 
 const EXTENSIONS = ['png', 'jpg', 'webp'] as const
@@ -136,5 +142,25 @@ watch(
   font-weight: 600;
   line-height: 15px;
   text-align: center;
+}
+
+/* 战报列表用的小号：一行要塞下队伍 + 时间 + 星级 + 摧毁率 */
+.unit-tile--small {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+}
+.unit-tile--small .unit-tile__image {
+  padding: 2px;
+}
+.unit-tile--small .unit-tile__fallback {
+  border-radius: 6px;
+  font-size: 0.5625rem;
+}
+.unit-tile--small .unit-tile__level {
+  min-width: 12px;
+  padding: 0 2px;
+  font-size: 0.5rem;
+  line-height: 11px;
 }
 </style>

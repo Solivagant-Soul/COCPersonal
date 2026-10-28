@@ -133,6 +133,24 @@ export function formatBeijingTime(value: string | Date | null | undefined): stri
   )
 }
 
+/**
+ * UTC ISO 串 → 北京时间的 `MM-DD HH:mm`，用于列表里的「什么时候打的」。
+ *
+ * 与 `formatBeijingTime` 同一套时区约定（写死 +8），只是去掉年份 —— 战报都在
+ * 最近一天内，年月是纯噪声；跨年那条（12-31 → 01-01）依旧按 +8 之后的日期算。
+ */
+export function formatShortBeijingTime(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined || value === '') return PLACEHOLDER
+  const t = value instanceof Date ? value.getTime() : Date.parse(String(value))
+  if (!Number.isFinite(t)) return PLACEHOLDER
+  const d = new Date(t + 8 * HOUR)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}` +
+    ` ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+  )
+}
+
 // 与后端 app/coc/tags.py 的 _TAG_RE 对齐：#? + 3–10 位字母数字
 const TAG_RE = /^[0-9A-Z]{3,10}$/
 const FULLWIDTH_HASH = /\uFF03/g

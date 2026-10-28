@@ -7,9 +7,10 @@ import { ApiError } from '../api/request'
 
 vi.mock('../api/endpoints', () => ({
   getPlayer: vi.fn(),
+  getPlayerBattles: vi.fn(),
 }))
 
-import { getPlayer } from '../api/endpoints'
+import { getPlayer, getPlayerBattles } from '../api/endpoints'
 import PlayerDetail from './PlayerDetail.vue'
 
 const router = createRouter({
@@ -39,9 +40,53 @@ const okPlayer = {
   meta: { cache: 'HIT', fetchedAt: '2026-01-01T00:00:00Z', ageSeconds: 5, ttlSeconds: 60 },
 }
 
+/** 两条进攻 + 一条防守：汇总只该统计进攻。 */
+const okBattles = {
+  data: {
+    items: [
+      {
+        timestamp: '2026-10-27T10:14:00.000Z',
+        kind: 'attack',
+        stars: 3,
+        destructionPercentage: 100,
+        opponent: { tag: '#AAA111', name: 'Rival One' },
+        army: {
+          troops: [{ name: 'Dragon Rider', level: 3, village: 'home' }],
+          spells: [{ name: 'Rage Spell', level: 6, village: 'home' }],
+          heroes: [{ name: 'Grand Warden', level: 70, village: 'home' }],
+        },
+      },
+      {
+        timestamp: '2026-10-27T09:37:00.000Z',
+        kind: 'attack',
+        stars: 2,
+        destructionPercentage: 84,
+        opponent: { tag: '#AAA222', name: 'Rival Two' },
+        army: { troops: [{ name: 'Root Rider', level: 4, village: 'home' }] },
+      },
+      {
+        timestamp: '2026-10-27T08:54:00.000Z',
+        kind: 'defense',
+        stars: 1,
+        destructionPercentage: 63,
+        opponent: { tag: '#BBB222', name: 'Rival Three' },
+        army: null,
+      },
+    ],
+  },
+  meta: { cache: 'HIT', fetchedAt: '2026-01-01T00:00:00Z', ageSeconds: 5, ttlSeconds: 60 },
+}
+
+const emptyBattles = {
+  data: { items: [] },
+  meta: { cache: 'MISS', fetchedAt: '2026-01-01T00:00:00Z', ageSeconds: 0, ttlSeconds: 60 },
+}
+
 describe('PlayerDetail', () => {
   beforeEach(() => {
     vi.mocked(getPlayer).mockReset()
+    vi.mocked(getPlayerBattles).mockReset()
+    vi.mocked(getPlayerBattles).mockResolvedValue(emptyBattles as never)
     localStorage.clear()
   })
 
@@ -208,5 +253,67 @@ describe('PlayerDetail', () => {
     const w = await mountAt()
 
     expect(w.find('.page-back').exists()).toBe(true)
+  })
+
+  it('战报区：逐条渲染时间、星级、摧毁率、攻/防标签与小图标', async () => {
+    vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
+    vi.mocked(getPlayerBattles).mockResolvedValue(okBattles as never)
+
+    const w = await mountAt()
+
+    expect(w.find('.battle-panel').exists()).toBe(true)
+    expect(w.find('.battle-panel__title').text()).toContain('传奇联赛战报')
+
+    const rows = w.findAll('.battle-row')
+    expect(rows).toHaveLength(3)
+
+    // 北京时间（UTC+8），只到分钟
+    expect(rows[0].find('.battle-row__time').text()).toBe('10-27 18:14')
+    expect(rows[0].find('.battle-row__stars').text()).toBe('★★★')
+    expect(rows[0].find('.battle-row__destruction').text()).toBe('100%')
+    expect(rows[0].find('.battle-row__kind').text()).toBe('进攻')
+    expect(rows[1].find('.battle-row__stars').text()).toBe('★★')
+    expect(rows[2].find('.battle-row__kind').text()).toBe('防守')
+
+    // 进攻条目附队伍，防守条目没有队伍
+    expect(rows[0].findAll('.unit-tile--small')).toHaveLength(3)
+    expect(rows[2].findAll('.unit-tile').length).toBe(0)
+  })
+
+  it('战报汇总：只统计进攻（场次 / 三星率 / 场均摧毁）', async () => {
+    vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
+    vi.mocked(getPlayerBattles).mockResolvedValue(okBattles as never)
+
+    const w = await mountAt()
+
+    const summary = w.find('.battle-summary').text()
+    // 2 场进攻（3★ + 2★），防守那条不该算进来
+    expect(summary).toContain('进攻 2 场')
+    expect(summary).toContain('三星率 50%')
+    expect(summary).toContain('场均摧毁 92%')
+  })
+
+  it('战报空态：没有战报时给一句说明，不渲染列表', async () => {
+    vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
+    vi.mocked(getPlayerBattles).mockResolvedValue(emptyBattles as never)
+
+    const w = await mountAt()
+
+    expect(w.find('.battle-panel').text()).toContain('该玩家最近没有传奇联赛战报')
+    expect(w.findAll('.battle-row')).toHaveLength(0)
+    expect(w.find('.battle-summary').exists()).toBe(false)
+  })
+
+  it('战报请求失败：整块不显示，档案照常渲染且不报错', async () => {
+    vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
+    vi.mocked(getPlayerBattles).mockRejectedValue(
+      new ApiError('UPSTREAM_FAULT', 'boom', 502),
+    )
+
+    const w = await mountAt()
+
+    expect(w.text()).toContain('Vasilije')
+    expect(w.find('.battle-panel').exists()).toBe(false)
+    expect(w.find('.error-card').exists()).toBe(false)
   })
 })

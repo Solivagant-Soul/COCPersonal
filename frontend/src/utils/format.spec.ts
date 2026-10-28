@@ -7,6 +7,7 @@ import {
   formatLeagueName,
   formatNumber,
   formatRelativeTime,
+  formatShortBeijingTime,
   normalizeTag,
 } from './format'
 
@@ -98,6 +99,25 @@ describe('formatBeijingTime', () => {
     expect(formatBeijingTime(undefined)).toBe('-')
     expect(formatBeijingTime('')).toBe('-')
     expect(formatBeijingTime('not-a-date')).toBe('-')
+  })
+})
+
+describe('formatShortBeijingTime', () => {
+  it('UTC 串换算成北京时间（+8），只到「月-日 时:分」', () => {
+    expect(formatShortBeijingTime('2026-10-27T10:14:00Z')).toBe('10-27 18:14')
+    expect(formatShortBeijingTime('2026-10-27T17:37:00Z')).toBe('10-28 01:37')
+  })
+
+  it('跨年也只显示月-日，不靠字符串截断', () => {
+    // 2025-12-31T16:00Z 已经是北京时间 2026-01-01 00:00
+    expect(formatShortBeijingTime('2025-12-31T16:00:00Z')).toBe('01-01 00:00')
+  })
+
+  it('缺失/非法时间返回 -', () => {
+    expect(formatShortBeijingTime(null)).toBe('-')
+    expect(formatShortBeijingTime(undefined)).toBe('-')
+    expect(formatShortBeijingTime('')).toBe('-')
+    expect(formatShortBeijingTime('not-a-date')).toBe('-')
   })
 })
 

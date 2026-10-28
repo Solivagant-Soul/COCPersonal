@@ -62,6 +62,45 @@
             </div>
           </div>
         </template>
+
+        <!--
+          战报是可选区块：请求失败时 battleRows 为 null，整块不出现。
+          空列表才显示空态 —— 「没有战报」和「拿不到战报」是两件事。
+        -->
+        <template v-if="battleRows !== null">
+          <hr class="page-card__divider page-card__divider--bottom" />
+          <div class="battle-panel">
+            <div class="battle-panel__head">
+              <h3 class="battle-panel__title">传奇联赛战报</h3>
+              <p v-if="battleSummary" class="battle-summary">{{ battleSummary }}</p>
+            </div>
+
+            <ul v-if="battleRows.length" class="battle-list">
+              <li v-for="row in battleRows" :key="row.key" class="battle-row">
+                <span
+                  class="battle-row__kind"
+                  :class="`battle-row__kind--${row.kind}`"
+                >{{ row.kindLabel }}</span>
+                <span class="battle-row__stars">{{ row.stars }}</span>
+                <span class="battle-row__destruction">{{ row.destruction }}</span>
+                <span v-if="row.units.length" class="battle-row__army">
+                  <UnitLevelTile
+                    v-for="(unit, unitIndex) in row.units"
+                    :key="`${unit.name}-${unitIndex}`"
+                    :asset="unit.asset"
+                    :name="unit.name"
+                    :level="unit.level"
+                    :max-level="unit.maxLevel"
+                    size="small"
+                  />
+                </span>
+                <span class="battle-row__time">{{ row.time }}</span>
+              </li>
+            </ul>
+
+            <p v-else class="battle-panel__empty">该玩家最近没有传奇联赛战报</p>
+          </div>
+        </template>
       </template>
     </section>
   </div>
@@ -71,7 +110,12 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getPlayer, type PlayerProfile } from '../api/endpoints'
+import {
+  getPlayer,
+  getPlayerBattles,
+  type PlayerBattle,
+  type PlayerProfile,
+} from '../api/endpoints'
 import { ApiError, type Meta } from '../api/request'
 import ErrorCard from '../components/ErrorCard.vue'
 import FollowButton from '../components/FollowButton.vue'
@@ -80,7 +124,12 @@ import StatGrid from '../components/StatGrid.vue'
 import type { StatItem } from '../components/statItem'
 import UnitLevelTile from '../components/UnitLevelTile.vue'
 import { isHomeVillage, lookupUnitAsset, type UnitAsset } from '../data/unitAssets'
-import { enumLabel, formatLeagueName, formatNumber } from '../utils/format'
+import {
+  enumLabel,
+  formatLeagueName,
+  formatNumber,
+  formatShortBeijingTime,
+} from '../utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -150,6 +199,86 @@ const unitGroups = computed<Array<{ key: string; label: string; units: UnitView[
     .filter((group) => group.units.length > 0)
 })
 
+/** 已取到的战报；`null` = 还在请求或请求失败 —— 两种情况都不渲染区块。 */
+const battles = ref<PlayerBattle[] | null>(null)
+
+interface BattleRowView {
+  key: string
+  kind: 'attack' | 'defense'
+  kindLabel: string
+  stars: string
+  destruction: string
+  time: string
+  units: UnitView[]
+}
+
+/** 一支队伍里的兵种 / 法术 / 英雄，顺序与练度区一致，夜世界单位照旧过滤。 */
+function battleUnits(army: PlayerBattle['army']): UnitView[] {
+  if (!army) return []
+  const groups = [
+    { key: 'troops', rows: army.troops },
+    { key: 'spells', rows: army.spells },
+    { key: 'heroes', rows: army.heroes },
+  ] as const
+
+  return groups.flatMap((group) =>
+    (group.rows ?? [])
+      .filter((row) => isHomeVillage(row.village))
+      .map<UnitView>((row) => ({
+        name: row.name,
+        asset: lookupUnitAsset(group.key, row.name),
+        level: typeof row.level === 'number' ? row.level : null,
+        maxLevel: typeof row.maxLevel === 'number' ? row.maxLevel : null,
+      })),
+  )
+}
+
+/** 星级用实心星表示；0 星写「0 星」，免得空串让人以为数据没加载出来。 */
+function formatStars(stars: number | null | undefined): string {
+  if (typeof stars !== 'number' || !Number.isFinite(stars)) return '-'
+  const n = Math.max(0, Math.min(3, Math.round(stars)))
+  return n === 0 ? '0 星' : '★'.repeat(n)
+}
+
+const battleRows = computed<BattleRowView[] | null>(() => {
+  const rows = battles.value
+  if (!rows) return null
+  return rows.map((battle, index) => ({
+    // 上游时间可能重复（同一秒的两条），索引兜底保证 key 唯一
+    key: `${battle.timestamp ?? ''}-${battle.opponent?.tag ?? ''}-${index}`,
+    kind: battle.kind,
+    kindLabel: battle.kind === 'attack' ? '进攻' : '防守',
+    stars: formatStars(battle.stars),
+    destruction:
+      typeof battle.destructionPercentage === 'number'
+        ? `${battle.destructionPercentage}%`
+        : '-',
+    time: formatShortBeijingTime(battle.timestamp),
+    units: battleUnits(battle.army),
+  }))
+})
+
+/**
+ * 汇总只统计**进攻**：防守条目上的星是对方打出来的，混进来算「三星率」
+ * 会把玩家的表现算错。没有进攻记录就不显示汇总。
+ */
+const battleSummary = computed<string | null>(() => {
+  const attacks = (battles.value ?? []).filter((battle) => battle.kind === 'attack')
+  if (!attacks.length) return null
+
+  const threeStar = attacks.filter((battle) => (battle.stars ?? 0) >= 3).length
+  const rate = Math.round((threeStar / attacks.length) * 100)
+  const destructions = attacks
+    .map((battle) => battle.destructionPercentage)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  const average = destructions.length
+    ? Math.round(destructions.reduce((sum, value) => sum + value, 0) / destructions.length)
+    : null
+
+  const tail = average === null ? '' : ` · 场均摧毁 ${average}%`
+  return `进攻 ${attacks.length} 场 · 三星率 ${rate}%${tail}`
+})
+
 /** 返回上一页。直接打开详情页（没有上一页）时回查询页，别把用户甩出站点。 */
 function goBack() {
   if (window.history.length > 1) router.back()
@@ -162,6 +291,9 @@ async function load() {
   error.value = null
   profile.value = null
   meta.value = null
+  battles.value = null
+  // 战报与档案并行拉：慢一点不该拖住档案，失败也不该影响档案
+  void loadBattles(tag)
   try {
     const res = await getPlayer(tag)
     profile.value = res.data
@@ -171,6 +303,18 @@ async function load() {
       err instanceof ApiError ? err : new ApiError('UNKNOWN_ERROR', '请求失败', 0)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadBattles(tag: string) {
+  try {
+    const res = await getPlayerBattles(tag)
+    // 请求期间路由可能已经切走，别把上一个玩家的战报写进当前页
+    if (String(route.params.tag ?? '') !== tag) return
+    battles.value = res.data.items ?? []
+  } catch {
+    // 可选区块：拿不到就整块不显示，不弹错误、不影响整页
+    battles.value = null
   }
 }
 
@@ -233,5 +377,89 @@ watch(() => route.params.tag, load, { immediate: true })
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* 战报区：与练度区共用同一张卡，靠同款分隔线隔开 */
+.battle-panel__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.battle-panel__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.battle-summary {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.battle-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.battle-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border-default);
+}
+.battle-row:first-child {
+  padding-top: 2px;
+  border-top: none;
+}
+
+.battle-row__kind {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+/* 进攻是我们关心的那一侧，用金色区分；防守保持中性灰 */
+.battle-row__kind--attack {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.battle-row__stars {
+  flex-shrink: 0;
+  /* 固定成三颗星的宽度：星级不同的行里，队伍图标才能竖着对齐 */
+  min-width: 38px;
+  font-size: 0.875rem;
+  letter-spacing: 1px;
+  color: var(--accent-gold-bright);
+}
+.battle-row__destruction {
+  flex-shrink: 0;
+  min-width: 42px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.battle-row__army {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+/* 时间靠右：换行时也停在行的末尾 */
+.battle-row__time {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+.battle-panel__empty {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  color: var(--text-faint);
 }
 </style>
