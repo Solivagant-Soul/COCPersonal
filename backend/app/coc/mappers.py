@@ -186,6 +186,7 @@ def map_clan_members(
                 player_name=item.get("name"),
                 role=_enum(item.get("role"), PLAYER_ROLES, "member"),
                 exp_level=_int_or_none(item.get("expLevel")),
+                town_hall_level=_int_or_none(item.get("townHallLevel")),
                 trophies=_int_or_none(item.get("trophies")),
                 builder_base_trophies=_int_or_none(
                     item.get("builderBaseTrophies")

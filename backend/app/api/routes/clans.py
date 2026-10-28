@@ -54,6 +54,7 @@ from app.db.models import (
     ClanWar,
     ClanWarLog,
     CwlLeagueGroup,
+    LeagueTier,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -270,7 +271,7 @@ async def get_clan_members(
                     .offset(offset)
                 )
             ).scalars().all()
-            items = [_member_out(r) for r in rows]
+            items = await _member_items(session, rows)
             fetched_at = rows[0].fetched_at if rows else None
         finally:
             await session.close()
@@ -290,14 +291,19 @@ async def get_clan_members(
             # 这里重新拉一次不带 limit 的成员列表来建库，避免只存半页。
             full = await coc.get_clan_members(client, normalized)
             # 从属关系对 clans 有 FK CASCADE（§5.6），而成员接口的响应里**没有**
-            # 部落自身 —— 直接插成员会违反外键。故先保证父行在位：不存在就补一条
-            # 只有 tag 的骨架行（tag 与 fetched_at 我们确实知道），绝不伪造详情字段。
+            # 部落自身。父行不存在时**绝不补骨架行**：详情页会并发请求
+            # ``/clans/{tag}``，骨架行会让那边落库撞主键，用户拿到一份字段全 null
+            # 的档案；而且 ``name=tag`` 的假档案一旦命中缓存就再也不会被替换。
+            # 此时只在内存里返回本次结果（不落库），下一次请求仍会回源。
             parent = (
                 await session.execute(select(Clan).where(Clan.tag == normalized))
             ).scalar_one_or_none()
             if parent is None:
-                session.add(Clan(tag=normalized, name=normalized, fetched_at=now))
-                await session.flush()
+                mapped = map_clan_members(normalized, full, now=now)
+                return {
+                    "_items": await _member_items(session, mapped[offset : offset + limit]),
+                    "_fetched_at": now,
+                }
 
             await session.execute(
                 delete(ClanMember).where(ClanMember.clan_tag == normalized)
@@ -314,7 +320,7 @@ async def get_clan_members(
                     .offset(offset)
                 )
             ).scalars().all()
-            items = [_member_out(r) for r in rows]
+            items = await _member_items(session, rows)
         finally:
             await session.close()
         # 落库后重新读，保证分页与缓存一致
@@ -333,19 +339,46 @@ async def get_clan_members(
     )
 
 
-def _member_out(row: ClanMember) -> dict:
+def _member_out(row: ClanMember, league: dict | None = None) -> dict:
     return {
         "tag": row.player_tag,
         "name": row.player_name,
         "role": row.role,
         "expLevel": row.exp_level,
+        "townHallLevel": row.town_hall_level,
         "trophies": row.trophies,
         "builderBaseTrophies": row.builder_base_trophies,
         "clanRank": row.clan_rank,
         "previousClanRank": row.previous_clan_rank,
         "donations": row.donations,
         "donationsReceived": row.donations_received,
+        "league": league,
     }
+
+
+async def _member_items(session, rows: list[ClanMember]) -> list[dict]:
+    """成员行 → 对外 JSON，顺带补齐联赛名与小图标。
+
+    ``league_tiers`` 是静态维表，本地无 Token 时可能是空的：查不到就给 ``null``，
+    前端退化成奖杯数，绝不因为维表没采到就让整个成员接口报错。
+    """
+    from sqlalchemy import select
+
+    tier_ids = {r.league_tier_id for r in rows if r.league_tier_id is not None}
+    leagues: dict[int, dict] = {}
+    if tier_ids:
+        tiers = (
+            await session.execute(select(LeagueTier).where(LeagueTier.id.in_(tier_ids)))
+        ).scalars().all()
+        leagues = {
+            tier.id: {
+                "id": tier.id,
+                "name": tier.name,
+                "iconUrls": tier.icon_urls,
+            }
+            for tier in tiers
+        }
+    return [_member_out(row, leagues.get(row.league_tier_id)) for row in rows]
 
 
 

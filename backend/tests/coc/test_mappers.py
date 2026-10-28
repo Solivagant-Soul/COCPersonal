@@ -203,6 +203,20 @@ def test_map_clan_members_skips_entries_without_tag():
     assert map_clan_members("#2PP", {"items": [broken]}, now=NOW) == []
 
 
+def test_map_clan_members_records_town_hall_level():
+    """大本等级要落库，成员表才有「大本」列可显示。"""
+    members = map_clan_members("#2PP", {"items": [_member_fixture()]}, now=NOW)
+    assert members[0].town_hall_level == 16
+
+
+def test_map_clan_members_town_hall_missing_is_none():
+    """老数据/上游缺字段时留空，不能编一个 0 出来。"""
+    member = _member_fixture()
+    member.pop("townHallLevel", None)
+    members = map_clan_members("#2PP", {"items": [member]}, now=NOW)
+    assert members[0].town_hall_level is None
+
+
 def _member_fixture() -> dict:
     return {
         "tag": "#9QJ8L0",
@@ -210,6 +224,7 @@ def _member_fixture() -> dict:
         "role": "leader",
         "expLevel": 205,
         "trophies": 4902,
+        "townHallLevel": 16,
         "clanRank": 1,
         "previousClanRank": 1,
         "donations": 2268,

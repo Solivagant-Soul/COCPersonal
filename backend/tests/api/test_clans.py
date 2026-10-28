@@ -38,6 +38,7 @@ CLAN_DETAIL = {
             "role": "leader",
             "expLevel": 205,
             "trophies": 4902,
+            "townHallLevel": 16,
             "clanRank": 1,
             "previousClanRank": 1,
             "donations": 2268,
@@ -51,6 +52,7 @@ CLAN_DETAIL = {
             "expLevel": 199,
             "trophies": 4885,
             "builderBaseTrophies": 4712,
+            "townHallLevel": 15,
             "clanRank": 2,
             "previousClanRank": 2,
             "donations": 210,
@@ -245,8 +247,19 @@ async def test_second_clan_request_hits_cache_and_skips_upstream(client, monkeyp
     assert second.json()["data"]["members"] == 44
 
 
-async def test_clan_members_second_request_hits_cache(client, monkeypatch):
-    """members 走 ``_fetched_at`` 键的 list 形状，同样必须命中。"""
+async def test_clan_members_second_request_hits_cache(client, monkeypatch, session):
+    """members 走 ``_fetched_at`` 键的 list 形状，同样必须命中。
+
+    部落行必须先存在：成员接口不会凭空造父行（见 skeleton 测试）。
+    """
+    import datetime as dt
+    from datetime import UTC
+
+    from app.coc.mappers import map_clan
+
+    session.add(map_clan(CLAN_DETAIL, now=dt.datetime.now(UTC)))
+    await session.commit()
+
     calls = []
 
     async def counting_stub(*a, **kw):
@@ -263,6 +276,82 @@ async def test_clan_members_second_request_hits_cache(client, monkeypatch):
     # fetcher 内部为建库还会额外拉一次不带 limit 的成员列表，故这里是 2 而不是 1
     assert len(calls) == 2, "第二次请求不该再回源"
     assert [m["tag"] for m in second.json()["data"]] == ["#9QJ8L0", "#8L9P2R"]
+
+
+async def test_members_expose_town_hall_and_league_tier(client, monkeypatch, session):
+    """成员表要显示「大本 / 段位」：大本随行返回，联赛名与图标来自维表。"""
+    from app.db.models import LeagueTier
+
+    session.add(
+        LeagueTier(
+            id=29000022,
+            name="Legend League",
+            icon_urls={"small": "https://x/l.png"},
+        )
+    )
+    await session.commit()
+
+    monkeypatch.setattr(
+        clans_routes.coc,
+        "get_clan_members",
+        _returns({"items": CLAN_DETAIL["memberList"]}),
+    )
+
+    resp = await client.get("/api/v1/clans/%232PP/members?page_size=2")
+
+    rows = resp.json()["data"]
+    assert rows[0]["townHallLevel"] == 16
+    assert rows[0]["league"] == {
+        "id": 29000022,
+        "name": "Legend League",
+        "iconUrls": {"small": "https://x/l.png"},
+    }
+    # 维表里没有 29000021：成员照常返回、联赛为 null，不许因此 500
+    assert rows[1]["townHallLevel"] == 15
+    assert rows[1]["league"] is None
+
+
+async def test_members_fetcher_does_not_create_skeleton_clan_row(client, monkeypatch, session):
+    """成员回源不得补造「只有 tag」的部落行。
+
+    详情页会并发请求 ``/clans/{tag}`` 与 ``/clans/{tag}/members``。成员这边若
+    抢先插入骨架行，详情那边落库就撞主键，用户得到一份字段全 null 的部落档案。
+    """
+    from sqlalchemy import select
+
+    from app.db.models import Clan
+
+    monkeypatch.setattr(
+        clans_routes.coc,
+        "get_clan_members",
+        _returns({"items": CLAN_DETAIL["memberList"]}),
+    )
+
+    resp = await client.get("/api/v1/clans/%232PP/members?page_size=2")
+
+    assert resp.status_code == 200
+    assert [m["tag"] for m in resp.json()["data"]] == ["#9QJ8L0", "#8L9P2R"]
+    assert (await session.execute(select(Clan))).scalars().all() == []
+
+
+async def test_clan_detail_after_members_returns_real_profile(
+    client, monkeypatch, fake_coc
+):
+    """先查成员、再查详情，详情必须是真实档案而不是骨架行。"""
+    monkeypatch.setattr(
+        clans_routes.coc,
+        "get_clan_members",
+        _returns({"items": CLAN_DETAIL["memberList"]}),
+    )
+    await client.get("/api/v1/clans/%232PP/members")
+
+    fake_coc("get_clan", CLAN_DETAIL)
+
+    resp = await client.get("/api/v1/clans/%232PP")
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["data"]["name"] == "Reddit Zulu"
+    assert body["data"]["clanLevel"] == 18
 
 
 # --------------------------------------------------------------------------- #

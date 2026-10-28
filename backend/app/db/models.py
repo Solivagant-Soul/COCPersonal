@@ -178,6 +178,8 @@ class ClanMember(Base):
     player_name: Mapped[str | None] = mapped_column(String(100))
     role: Mapped[str | None] = mapped_column(String(20))
     exp_level: Mapped[int | None] = mapped_column(Integer)
+    # 成员表要显示大本等级；官方 memberList 里有，老数据留空
+    town_hall_level: Mapped[int | None] = mapped_column(Integer)
     trophies: Mapped[int | None] = mapped_column(Integer)
     builder_base_trophies: Mapped[int | None] = mapped_column(Integer)
     required_trophies: Mapped[int | None] = mapped_column(Integer)
