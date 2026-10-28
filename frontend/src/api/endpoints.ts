@@ -99,9 +99,15 @@ export interface ClanMemberRow {
   name?: string | null
   role?: string | null
   expLevel?: number | null
+  townHallLevel?: number | null
   trophies?: number | null
-  donations?: number | null
+  builderBaseTrophies?: number | null
   clanRank?: number | null
+  previousClanRank?: number | null
+  donations?: number | null
+  donationsReceived?: number | null
+  /** 联赛层级：后端从 league_tiers 维表补名字与图标，维表没数据时为 null。 */
+  league?: LeagueRef | null
   [key: string]: unknown
 }
 
@@ -222,6 +228,17 @@ export function getPlayerBattles(tag: string): Promise<Envelope<PlayerBattlesPag
 
 export function getClan(tag: string): Promise<Envelope<ClanDetail>> {
   return request<ClanDetail>(`/api/v1/clans/${encodeURIComponent(tag)}`)
+}
+
+/** 部落成员。官方单个部落上限 50 人，默认一页取全。 */
+export function getClanMembers(
+  tag: string,
+  pageSize = 50,
+): Promise<Envelope<ClanMemberRow[]>> {
+  return request<ClanMemberRow[]>(
+    `/api/v1/clans/${encodeURIComponent(tag)}/members`,
+    { params: { page: 1, page_size: pageSize } },
+  )
 }
 
 export function getLocations(): Promise<Envelope<LocationsPage>> {
