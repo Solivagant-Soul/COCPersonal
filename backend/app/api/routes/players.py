@@ -26,8 +26,8 @@ from app.cache.readthrough import read_through
 from app.cache.ttl import get_ttl
 from app.coc import endpoints as coc
 from app.coc.client import CocClient
-from app.coc.errors import CocError
-from app.coc.mappers import map_player
+from app.coc.errors import CocError, PlayerNotFound
+from app.coc.mappers import map_battlelog, map_player
 from app.db.models import LeagueTier, Player
 
 router = APIRouter(prefix="/api/v1")
@@ -167,6 +167,72 @@ async def get_player(
 
     return DataOut(
         data=_player_out(result.data),
+        meta=build_meta(result.status, result.fetched_at, ttl),
+    )
+
+
+#: 战报进程内缓存的上限：每条约几 KB，500 个 tag 也就几 MB。
+_BATTLELOG_CACHE_MAX = 500
+
+
+def _battlelog_cache(request: Request) -> dict[str, dict]:
+    """战斗日志的进程内缓存，挂在 ``app.state`` 上。
+
+    为什么不是表：官方只回最近一批，没有历史可存 —— 要做「累计采样」时再谈表结构。
+    为什么挂在 ``app.state`` 而不是模块全局：测试每个用例新建 app，模块全局会让
+    上一个用例的战报漏到下一个用例里，而且那种泄漏在测试里看起来**像**缓存生效。
+    ``--workers 1`` 是硬约束，所以进程内缓存就等于全局缓存。
+    """
+    store = getattr(request.app.state, "battlelog_cache", None)
+    if store is None:
+        store = {}
+        request.app.state.battlelog_cache = store
+    return store
+
+
+@router.get("/players/{tag}/battles", response_model=None)
+async def get_player_battles(
+    tag: str,
+    request: Request,
+    client: CocClient = Depends(get_coc_client),
+):
+    """最近的传奇联赛战斗日志（进攻 + 防守）。
+
+    非传奇杯玩家的战报是**空态而不是错误**：官方对这类玩家回 404，
+    但玩家本身是存在的，把 404 冒给前端会让整页显示"查询失败"。
+    """
+    normalized = validate_tag(tag)
+    ttl = get_ttl("battlelog")
+    store = _battlelog_cache(request)
+
+    async def loader():
+        return store.get(normalized)
+
+    async def persister(data):
+        store[normalized] = data
+        if len(store) > _BATTLELOG_CACHE_MAX:
+            oldest = min(store, key=lambda key: store[key]["fetched_at"])
+            store.pop(oldest, None)
+
+    async def fetcher():
+        try:
+            raw = await coc.get_player_battlelog(client, normalized)
+        except PlayerNotFound:
+            raw = {}
+        return {
+            "items": map_battlelog(raw, player_tag=normalized),
+            "fetched_at": datetime.now(UTC),
+        }
+
+    try:
+        result = await read_through(
+            "battlelog", normalized, loader, persister, fetcher, None
+        )
+    except CocError as exc:
+        return await coc_error_handler(request, exc)
+
+    return DataOut(
+        data={"items": result.data["items"]},
         meta=build_meta(result.status, result.fetched_at, ttl),
     )
 

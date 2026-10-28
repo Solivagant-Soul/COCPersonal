@@ -1,0 +1,84 @@
+{
+  "_source": "手搓占位：按官方文档 /players/{tag}/battlelog 的字段名编写，不是真实响应",
+  "_todo": "拿到真实 Token 后整体替换为真实响应，并删掉 test_fixture_samples.py 里的 placeholder 断言",
+  "_note": "四条目的不同：items[0]/[1] 是我们的进攻（带 army），items[2] 是别人的进攻（我们的防守），items[3] 缺 attack 对象（异形条目兜底）；时间字段两种写法各留一条。",
+  "items": [
+    {
+      "battleType": "legend",
+      "attack": {
+        "attackerTag": "#9QJ8L0",
+        "defenderTag": "#8L9P2R",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "order": 41,
+        "bounty": 32
+      },
+      "opponentPlayerTag": "#8L9P2R",
+      "opponentName": "Rival One",
+      "opponentTownHallLevel": 16,
+      "timestamp": "2026-10-27T18:14:00.000Z",
+      "army": {
+        "name": "Dragon Rider",
+        "shareCode": "share-code-placeholder",
+        "troops": [
+          {"name": "Dragon Rider", "level": 3, "maxLevel": 3, "village": "home"},
+          {"name": "Balloon", "level": 12, "maxLevel": 12, "village": "home"}
+        ],
+        "spells": [
+          {"name": "Rage Spell", "level": 6, "maxLevel": 6, "village": "home"},
+          {"name": "Freeze Spell", "level": 7, "maxLevel": 7, "village": "home"}
+        ],
+        "heroes": [
+          {"name": "Grand Warden", "level": 70, "maxLevel": 70, "village": "home"}
+        ],
+        "pets": [{"name": "L.A.S.S.I", "level": 10, "maxLevel": 10, "village": "home"}]
+      }
+    },
+    {
+      "battleType": "legend",
+      "attack": {
+        "attackerTag": "#9QJ8L0",
+        "defenderTag": "#AAA111",
+        "stars": 2,
+        "destructionPercentage": 84,
+        "order": 40,
+        "bounty": 28
+      },
+      "opponentPlayerTag": "#AAA111",
+      "opponentName": "Rival Two",
+      "opponentTownHallLevel": 16,
+      "timestamp": "2026-10-27T17:37:00.000Z",
+      "army": {
+        "troops": [
+          {"name": "Root Rider", "level": 4, "maxLevel": 4, "village": "home"}
+        ],
+        "spells": [
+          {"name": "Overgrowth Spell", "level": 4, "maxLevel": 4, "village": "home"}
+        ],
+        "heroes": [
+          {"name": "Archer Queen", "level": 95, "maxLevel": 95, "village": "home"}
+        ]
+      }
+    },
+    {
+      "battleType": "legend",
+      "attack": {
+        "attackerTag": "#BBB222",
+        "defenderTag": "#9QJ8L0",
+        "stars": 1,
+        "destructionPercentage": 63,
+        "order": 12,
+        "bounty": 30
+      },
+      "opponentPlayerTag": "#BBB222",
+      "opponentName": "Rival Three",
+      "battleTimestamp": "2026-10-27T16:54:00.000Z"
+    },
+    {
+      "battleType": "legend",
+      "stars": 0,
+      "destructionPercentage": 21,
+      "battleTimestamp": "2026-10-27T16:41:00.000Z"
+    }
+  ]
+}

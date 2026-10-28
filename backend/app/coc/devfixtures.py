@@ -72,6 +72,8 @@ class FixtureTransport(httpx.AsyncBaseTransport):
             return _load("ranking_clans.json"), 200
         if "/rankings/players" in path:
             return _load("ranking_players.json"), 200
+        if "/players/" in path and path.endswith("/battlelog"):
+            return _load("player_battlelog.json"), 200
         if "/players/" in path:
             return _load("player_profile.json"), 200
         if "/clans/" in path:

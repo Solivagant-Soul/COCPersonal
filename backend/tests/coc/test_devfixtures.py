@@ -83,3 +83,18 @@ async def test_transport_maps_clan_and_locations_paths():
     locs = await t.handle_async_request(httpx.Request("GET", "https://x/v1/locations"))
     assert locs.status_code == 200
     assert isinstance(locs.json()["items"], list)
+
+async def test_transport_maps_player_battlelog_path():
+    """``/players/{tag}/battlelog`` 必须落到战报夹具，不能落到玩家详情夹具。
+
+    同样是路由顺序坑：玩家详情那条只判 ``"/players/" in path``，不先判
+    ``/battlelog`` 的话，前端拿到的"战报"会是一份玩家档案。
+    """
+    t = FixtureTransport()
+    resp = await t.handle_async_request(
+        httpx.Request("GET", "https://x/v1/players/%239QJ8L0/battlelog")
+    )
+    body = resp.json()
+    assert resp.status_code == 200
+    assert isinstance(body["items"], list) and body["items"]
+    assert "items" in body and "name" not in body

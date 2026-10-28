@@ -32,6 +32,7 @@ from app.coc.endpoints import (
     get_location,
     get_locations,
     get_player,
+    get_player_battlelog,
     get_player_labels,
     get_player_rankings,
     get_warleague,
@@ -433,5 +434,20 @@ async def test_get_league_season_players_passes_limit():
 
         await get_league_season_players(client, 29000022, "2026-09", limit=200)
         assert calls[0] == "/v1/leagues/29000022/seasons/2026-09?limit=200"
+    finally:
+        await client.aclose()
+
+async def test_get_player_battlelog_url_and_encoding():
+    """战斗日志：tag 同样要编码成 %23 并归一化大写，路径尾缀必须是 /battlelog。"""
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"items": []})
+
+    client = make_client(handler)
+    try:
+        await get_player_battlelog(client, "9qj8l0")
+        assert calls[0] == "/v1/players/%239QJ8L0/battlelog"
     finally:
         await client.aclose()

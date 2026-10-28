@@ -22,6 +22,7 @@ from app.coc.devfixtures import FIXTURES_DIR
 SAMPLE_FILES = [
     "clan_detail.json",
     "player_profile.json",
+    "player_battlelog.json",
     "locations.json",
     "ranking_clans.json",
     "ranking_players.json",

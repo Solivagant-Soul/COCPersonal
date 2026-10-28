@@ -397,3 +397,106 @@ def map_cwl_group(clan_tag: str, data: dict[str, Any], now: dt.datetime):
         rounds=rounds if isinstance(rounds, list) else None,
         fetched_at=now,
     )
+
+# --------------------------------------------------------------------------- #
+# 战斗日志
+# --------------------------------------------------------------------------- #
+
+
+def map_battlelog(data: dict[str, Any], *, player_tag: str) -> list[dict[str, Any]]:
+    """战斗日志 → 前端直接能渲染的列表。
+
+    **不落库、不建表**：官方只回最近这一批（约一天），没有历史可言。等要做
+    「累计采样」时再谈表结构，别让一个只读面板先背上一张表。
+
+    上游有三件不可靠的事，这里逐一兜住：
+      1. 时间字段改过名（``timestamp`` → ``battleTimestamp``），两个都读；
+      2. 条目可能带 ``attack``（含双方 tag），也可能什么都不带 —— 缺对象时按
+         「有没有 ``army``」区分进攻/防守，宁可粗略也不抛异常；
+      3. 顺序不保证，按时间倒序自己排。
+    """
+    items = data.get("items")
+    if not isinstance(items, list):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        attack = item.get("attack")
+        attack = attack if isinstance(attack, dict) else None
+        army = item.get("army")
+
+        kind = _battle_kind(attack, army, player_tag)
+        stars = attack.get("stars") if attack else item.get("stars")
+        destruction = (
+            attack.get("destructionPercentage")
+            if attack
+            else item.get("destructionPercentage")
+        )
+
+        out.append(
+            {
+                "timestamp": item.get("timestamp") or item.get("battleTimestamp"),
+                "kind": kind,
+                "stars": _int_or_none(stars),
+                "destructionPercentage": _int_or_none(destruction),
+                "opponent": _battle_opponent(item, attack, kind),
+                "army": _battle_army(army),
+            }
+        )
+
+    # 时间缺失的排最后（空串比任何 ISO 串都小，配合 reverse 自然沉底）
+    out.sort(key=lambda row: row["timestamp"] or "", reverse=True)
+    return out
+
+
+#: 一支队伍里认识的子列表。官方以后加新槽位（如 ``pets`` 之后的）就多一条。
+_ARMY_KEYS = ("troops", "spells", "heroes", "pets", "equipment")
+
+
+def _battle_kind(
+    attack: dict[str, Any] | None, army: object, player_tag: str
+) -> str:
+    """判断这条是「我打的」还是「我被别人打的」。
+
+    有 ``attack`` 时按双方 tag 认（唯一可靠的方式）；没有就退化成
+    「带 army 的是进攻」—— 传奇日志里只有进攻条目会附上自己的队伍。
+    """
+    if attack is not None:
+        attacker = _tag_or_none(attack.get("attackerTag"))
+        defender = _tag_or_none(attack.get("defenderTag"))
+        if attacker:
+            return "attack" if attacker == player_tag else "defense"
+        if defender:
+            return "defense" if defender == player_tag else "attack"
+    return "attack" if isinstance(army, dict) else "defense"
+
+
+def _tag_or_none(value: object) -> str | None:
+    """空串先挡掉再归一化 —— ``normalize_tag("")`` 会返回一个只有 ``#`` 的假 tag。"""
+    text = value.strip() if isinstance(value, str) else ""
+    return normalize_tag(text) if text else None
+
+
+def _battle_opponent(
+    item: dict[str, Any], attack: dict[str, Any] | None, kind: str
+) -> dict[str, Any] | None:
+    """对手：优先上游给的 ``opponentPlayerTag``，没有就从 attack 的双方里取另一头。"""
+    tag = _tag_or_none(item.get("opponentPlayerTag"))
+    if not tag and attack is not None:
+        other = attack.get("defenderTag") if kind == "attack" else attack.get("attackerTag")
+        tag = _tag_or_none(other)
+    name = item.get("opponentName")
+    name = name if isinstance(name, str) and name else None
+    if not tag and name is None:
+        return None
+    return {"tag": tag, "name": name}
+
+
+def _battle_army(raw: object) -> dict[str, Any] | None:
+    """只留认识的子列表，其余（``shareCode`` 等）不要 —— 前端用不上。"""
+    if not isinstance(raw, dict):
+        return None
+    army = {key: raw[key] for key in _ARMY_KEYS if isinstance(raw.get(key), list)}
+    return army or None

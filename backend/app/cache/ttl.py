@@ -25,6 +25,8 @@ TTL: dict[str, int] = {
     "cwl": 600,
     # 玩家
     "player": 300,
+    # 战斗日志：一轮传奇约 10 分钟，60s 只用来挡连点刷新，不做长期缓存
+    "battlelog": 60,
     # 静态字典
     "leaguetiers": 86_400,
     "locations": 86_400,

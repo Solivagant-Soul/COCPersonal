@@ -33,6 +33,12 @@ def test_player_is_300s():
     assert get_ttl("player") == 300
 
 
+def test_battlelog_is_shorter_than_player():
+    """战斗日志一轮约 10 分钟，60 秒足够挡住连点刷新；比档案更短是刻意的。"""
+    assert get_ttl("battlelog") == 60
+    assert get_ttl("battlelog") < get_ttl("player")
+
+
 def test_static_dictionaries_are_one_day():
     """维表静态字典：locations / leaguetiers / labels。"""
     for resource in ("locations", "leaguetiers", "labels"):
@@ -65,7 +71,7 @@ def test_ttl_table_covers_every_documented_resource():
     expected = {
         "clan", "clan_members", "currentwar", "warlog", "cwl", "player",
         "leaguetiers", "locations", "labels", "leagues", "rankings",
-        "seasons", "goldpass",
+        "seasons", "goldpass", "battlelog",
     }
     assert expected <= set(TTL), f"缺少: {expected - set(TTL)}"
 

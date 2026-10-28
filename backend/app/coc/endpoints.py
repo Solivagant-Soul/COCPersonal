@@ -102,6 +102,11 @@ async def get_player(client: CocClient, tag: str) -> dict[str, Any]:
     return await client.get(f"/players/{quote_tag(tag)}")
 
 
+async def get_player_battlelog(client: CocClient, tag: str) -> dict[str, Any]:
+    """最近的战斗日志（传奇联赛才有内容）。"""
+    return await client.get(f"/players/{quote_tag(tag)}/battlelog")
+
+
 async def verify_player_token(
     client: CocClient, tag: str, token: str
 ) -> dict[str, Any]:

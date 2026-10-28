@@ -19,6 +19,7 @@ from app.coc.devfixtures import FIXTURES_DIR
 from app.coc.mappers import (
     CLAN_TYPES,
     _enum,
+    map_battlelog,
     map_clan,
     map_clan_capital,
     map_clan_members,
@@ -410,3 +411,104 @@ def test_full_ranking_fixture_maps_previous_rank_zero():
     data = _load("ranking_clans.json")["items"]
     newcomer = [i for i in data if i["previousRank"] == 0][0]
     assert map_clan(newcomer, now=NOW).clan_points == 55088
+
+# --------------------------------------------------------------------------- #
+# 战斗日志（传奇联赛）
+# --------------------------------------------------------------------------- #
+
+#: 三种形状各一条：我们的进攻、别人的进攻（我们的防守）、缺 attack 的异形条目。
+BATTLE_LOG = {
+    "items": [
+        {
+            "battleType": "legend",
+            "attack": {
+                "attackerTag": "#9QJ8L0",
+                "defenderTag": "#AAA111",
+                "stars": 3,
+                "destructionPercentage": 100,
+                "order": 7,
+            },
+            "opponentPlayerTag": "#AAA111",
+            "opponentName": "Opponent One",
+            "timestamp": "2026-10-27T18:14:00.000Z",
+            "army": {
+                "troops": [{"name": "Dragon Rider", "level": 3, "village": "home"}],
+                "spells": [{"name": "Rage Spell", "level": 6, "village": "home"}],
+                "heroes": [{"name": "Grand Warden", "level": 70, "village": "home"}],
+                "pets": [{"name": "L.A.S.S.I", "level": 10}],
+            },
+        },
+        {
+            "battleType": "legend",
+            "attack": {
+                "attackerTag": "#BBB222",
+                "defenderTag": "#9QJ8L0",
+                "stars": 2,
+                "destructionPercentage": 78,
+            },
+            "opponentPlayerTag": "#BBB222",
+            "opponentName": "Opponent Two",
+            # 新版字段名是 battleTimestamp，老的是 timestamp —— 两个都要认
+            "battleTimestamp": "2026-10-27T17:00:00.000Z",
+        },
+        {
+            "battleType": "legend",
+            "stars": 1,
+            "destructionPercentage": 45,
+            "battleTimestamp": "2026-10-27T16:00:00.000Z",
+        },
+    ]
+}
+
+
+def test_map_battlelog_marks_our_attack_and_keeps_army():
+    items = map_battlelog(BATTLE_LOG, player_tag="#9QJ8L0")
+    first = items[0]
+
+    assert first["kind"] == "attack"
+    assert first["stars"] == 3
+    assert first["destructionPercentage"] == 100
+    assert first["timestamp"] == "2026-10-27T18:14:00.000Z"
+    assert first["opponent"] == {"tag": "#AAA111", "name": "Opponent One"}
+    assert [t["name"] for t in first["army"]["troops"]] == ["Dragon Rider"]
+    assert [h["name"] for h in first["army"]["heroes"]] == ["Grand Warden"]
+
+
+def test_map_battlelog_marks_opponent_attack_as_defense():
+    items = map_battlelog(BATTLE_LOG, player_tag="#9QJ8L0")
+    second = items[1]
+
+    assert second["kind"] == "defense"
+    # 老字段缺省时读 battleTimestamp，不能丢时间
+    assert second["timestamp"] == "2026-10-27T17:00:00.000Z"
+    assert second["opponent"] == {"tag": "#BBB222", "name": "Opponent Two"}
+    assert second["stars"] == 2
+    assert second["army"] is None
+
+
+def test_map_battlelog_falls_back_to_top_level_when_no_attack_object():
+    """异形条目不许炸：没有 attack 对象时按顶层字段读，且当防守处理。"""
+    items = map_battlelog(BATTLE_LOG, player_tag="#9QJ8L0")
+    third = items[2]
+
+    assert third["kind"] == "defense"
+    assert third["stars"] == 1
+    assert third["destructionPercentage"] == 45
+    assert third["opponent"] is None
+
+
+def test_map_battlelog_sorts_newest_first():
+    """上游顺序不保证：必须按时间倒序，否则「最近几场」是错的。"""
+    shuffled = {"items": [BATTLE_LOG["items"][2], BATTLE_LOG["items"][0]]}
+    items = map_battlelog(shuffled, player_tag="#9QJ8L0")
+    assert [i["timestamp"] for i in items] == [
+        "2026-10-27T18:14:00.000Z",
+        "2026-10-27T16:00:00.000Z",
+    ]
+
+
+def test_map_battlelog_tolerates_missing_or_wrong_items():
+    assert map_battlelog({}, player_tag="#9QJ8L0") == []
+    assert map_battlelog({"items": "nope"}, player_tag="#9QJ8L0") == []
+    # 条目本身是字符串也不能炸
+    assert map_battlelog({"items": ["nope"]}, player_tag="#9QJ8L0") == []

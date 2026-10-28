@@ -233,3 +233,100 @@ def test_player_not_found_and_clan_not_found_have_distinct_codes():
 
     assert ERROR_CODE_MAP[PlayerNotFound][1] == "PLAYER_NOT_FOUND"
     assert ERROR_CODE_MAP[ClanNotFound][1] == "CLAN_NOT_FOUND"
+
+# --------------------------------------------------------------------------- #
+# 传奇联赛战报
+# --------------------------------------------------------------------------- #
+
+BATTLE_LOG = {
+    "items": [
+        {
+            "battleType": "legend",
+            "attack": {
+                "attackerTag": "#9QJ8L0",
+                "defenderTag": "#AAA111",
+                "stars": 3,
+                "destructionPercentage": 100,
+            },
+            "opponentPlayerTag": "#AAA111",
+            "opponentName": "Opponent One",
+            "timestamp": "2026-10-27T18:14:00.000Z",
+            "army": {"troops": [{"name": "Dragon Rider", "level": 3, "village": "home"}]},
+        }
+    ]
+}
+
+
+async def test_player_battles_returns_normalized_items(client, fake_coc):
+    fake_coc("get_player_battlelog", BATTLE_LOG)
+
+    resp = await client.get("/api/v1/players/%239QJ8L0/battles")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["data"]["items"][0]["kind"] == "attack"
+    assert body["data"]["items"][0]["stars"] == 3
+    assert body["meta"]["cache"] == "MISS"
+
+
+async def test_player_battles_second_request_hits_cache(client, monkeypatch):
+    """TTL 内第二次请求必须 HIT 且不回源 —— 战斗日志同样吃令牌桶额度。"""
+    calls = []
+
+    async def stub(_client, tag):
+        calls.append(tag)
+        return BATTLE_LOG
+
+    monkeypatch.setattr(players_routes.coc, "get_player_battlelog", stub)
+
+    first = await client.get("/api/v1/players/%239QJ8L0/battles")
+    second = await client.get("/api/v1/players/%239QJ8L0/battles")
+
+    assert calls == ["#9QJ8L0"], "第二次仍在回源"
+    assert first.json()["meta"]["cache"] == "MISS"
+    assert second.json()["meta"]["cache"] == "HIT"
+
+
+async def test_player_battles_without_log_returns_empty_list(client, fake_coc):
+    """非传奇杯玩家的战斗日志是「没有」，不是「玩家不存在」：不能把 404 冒给前端。"""
+    from app.coc.errors import PlayerNotFound
+
+    fake_coc("get_player_battlelog", PlayerNotFound("no battle log"))
+
+    resp = await client.get("/api/v1/players/%239QJ8L0/battles")
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["items"] == []
+
+
+async def test_player_battles_stale_when_upstream_fails_after_cache(client, monkeypatch):
+    from app.coc.errors import CocUpstreamError
+
+    calls = {"n": 0}
+
+    async def stub(_client, _tag):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise CocUpstreamError("boom")
+        return BATTLE_LOG
+
+    monkeypatch.setattr(players_routes.coc, "get_player_battlelog", stub)
+    # 把 TTL 判成已过期，才能走到回源失败那条路
+    monkeypatch.setattr("app.cache.readthrough.get_ttl", lambda _resource: 0)
+
+    await client.get("/api/v1/players/%239QJ8L0/battles")
+    resp = await client.get("/api/v1/players/%239QJ8L0/battles")
+
+    assert resp.status_code == 200
+    assert resp.json()["meta"]["cache"] == "STALE"
+    assert resp.json()["data"]["items"]
+
+
+async def test_player_battles_upstream_fault_returns_502(client, fake_coc):
+    from app.coc.errors import CocUpstreamError
+
+    fake_coc("get_player_battlelog", CocUpstreamError("boom"))
+
+    resp = await client.get("/api/v1/players/%239QJ8L0/battles")
+
+    assert resp.status_code == 502
