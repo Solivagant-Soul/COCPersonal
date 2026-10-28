@@ -160,7 +160,6 @@ async def get_clan(
 
             clan = map_clan(raw, now=now)
             capital = map_clan_capital(normalized, raw, now=now)
-            members = map_clan_members(clan.tag, raw, now=now)
 
             await session.merge(clan)
             if capital is not None:
@@ -170,10 +169,8 @@ async def get_clan(
                 await session.execute(
                     delete(ClanCapital).where(ClanCapital.clan_tag == clan.tag)
                 )
-            await session.execute(
-                delete(ClanMember).where(ClanMember.clan_tag == clan.tag)
-            )
-            session.add_all(members)
+            # 成员表只归 ``/clans/{tag}/members`` 维护：详情响应并不含成员，
+            # 两边都做「删除+插入」会让并发访问（页面同时发两个请求）互撞主键。
             await session.commit()
         finally:
             await session.close()

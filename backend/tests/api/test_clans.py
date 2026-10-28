@@ -334,6 +334,23 @@ async def test_members_fetcher_does_not_create_skeleton_clan_row(client, monkeyp
     assert (await session.execute(select(Clan))).scalars().all() == []
 
 
+async def test_clan_detail_does_not_write_member_rows(client, fake_coc, session):
+    """成员表只由成员接口维护。
+
+    详情页会并发请求 ``/clans/{tag}`` 与 ``/clans/{tag}/members``。两边都做
+    「删除+插入」同一批成员行时，两个事务会互撞 ``clan_members`` 主键。
+    详情响应本来就不含成员，不该写这张表。
+    """
+    from sqlalchemy import select
+
+    from app.db.models import ClanMember
+
+    fake_coc("get_clan", CLAN_DETAIL)
+    await client.get("/api/v1/clans/%232PP")
+
+    assert (await session.execute(select(ClanMember))).scalars().all() == []
+
+
 async def test_clan_detail_after_members_returns_real_profile(
     client, monkeypatch, fake_coc
 ):
