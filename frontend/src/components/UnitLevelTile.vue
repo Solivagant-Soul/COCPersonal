@@ -144,6 +144,12 @@ watch(
   text-align: center;
 }
 
+/* 满级：数字反过来用金底深字 —— 与金描边呼应，扫一眼就知道哪几个不用再升 */
+.unit-tile--max .unit-tile__level {
+  background: var(--accent-gold-bright);
+  color: var(--on-accent);
+}
+
 /* 战报列表用的小号：一行要塞下队伍 + 时间 + 星级 + 摧毁率 */
 .unit-tile--small {
   width: 30px;

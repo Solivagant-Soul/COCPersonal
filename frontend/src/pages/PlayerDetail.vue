@@ -1,10 +1,22 @@
 <template>
   <div class="page">
-    <section class="page-card">
-      <button type="button" class="page-back" @click="goBack">← 返回</button>
+    <BackButton />
 
+    <section class="page-card">
       <div class="page-head">
-        <h2 class="page-card__title">{{ profile ? profile.name || profile.tag : '玩家详情' }}</h2>
+        <h2 class="page-card__title">
+          {{ profile ? profile.name || profile.tag : '玩家详情' }}
+          <!-- 大本营图标贴着昵称：一眼看出几本，不用再去统计格里找 -->
+          <img
+            v-if="townHallIconSrc"
+            class="page-card__th"
+            :src="townHallIconSrc"
+            :alt="`大本营 ${profile?.townHallLevel} 级`"
+            :title="`大本营 ${profile?.townHallLevel} 级`"
+            decoding="async"
+            @error="townHallIconBroken = true"
+          />
+        </h2>
         <FollowButton
           v-if="profile"
           :tag="profile.tag"
@@ -66,8 +78,9 @@
         <!--
           战报是可选区块：请求失败时 battleRows 为 null，整块不出现。
           空列表才显示空态 —— 「没有战报」和「拿不到战报」是两件事。
+          传奇战报只对传奇段位有意义：不在传奇时整块不渲染，也不去请求上游。
         -->
-        <template v-if="battleRows !== null">
+        <template v-if="isLegendLeague && battleRows !== null">
           <hr class="page-card__divider page-card__divider--bottom" />
           <div class="battle-panel">
             <div class="battle-panel__head">
@@ -108,22 +121,25 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import {
   getPlayer,
   getPlayerBattles,
   type PlayerBattle,
   type PlayerProfile,
+  type UnitLevelRow,
 } from '../api/endpoints'
 import { ApiError, type Meta } from '../api/request'
+import BackButton from '../components/BackButton.vue'
 import ErrorCard from '../components/ErrorCard.vue'
 import FollowButton from '../components/FollowButton.vue'
 import LoadingBlock from '../components/LoadingBlock.vue'
 import StatGrid from '../components/StatGrid.vue'
 import type { StatItem } from '../components/statItem'
 import UnitLevelTile from '../components/UnitLevelTile.vue'
-import { isHomeVillage, lookupUnitAsset, type UnitAsset } from '../data/unitAssets'
+import { classifyTroop, isHomeVillage, lookupUnitAsset, type UnitAsset } from '../data/unitAssets'
+import { townHallIcon } from '../data/townHall'
 import {
   enumLabel,
   formatLeagueName,
@@ -132,7 +148,6 @@ import {
 } from '../utils/format'
 
 const route = useRoute()
-const router = useRouter()
 
 const loading = ref(false)
 const error = ref<ApiError | null>(null)
@@ -140,6 +155,15 @@ const profile = ref<PlayerProfile | null>(null)
 const meta = ref<Meta | null>(null)
 
 const isStale = computed(() => meta.value?.cache === 'STALE')
+
+/**
+ * 昵称旁的大本营图标。素材缺失（没跑下载脚本的本地/线上）时浏览器会 404，
+ * 这里一失败就撤掉，别留一个破图占位。
+ */
+const townHallIconBroken = ref(false)
+const townHallIconSrc = computed(() =>
+  townHallIconBroken.value ? null : townHallIcon(profile.value?.townHallLevel),
+)
 
 const stats = computed<StatItem[]>(() => {
   const p = profile.value
@@ -170,37 +194,84 @@ interface UnitView {
   maxLevel: number | null
 }
 
+/** 一行练度 → 视图。夜世界的单位在本地素材库里没有图，混进来会变成一片灰色兜底格子。 */
+function toUnitViews(
+  rows: UnitLevelRow[] | null | undefined,
+  resolve: (name: string) => UnitAsset | null,
+): UnitView[] {
+  return (rows ?? [])
+    .filter((row) => isHomeVillage(row.village))
+    .map((row) => ({
+      name: row.name,
+      asset: resolve(row.name),
+      level: typeof row.level === 'number' ? row.level : null,
+      maxLevel: typeof row.maxLevel === 'number' ? row.maxLevel : null,
+    }))
+}
+
 /**
- * 练度分组。只留主村 —— 夜世界的单位在本地素材库里没有图，
- * 混进来会让整块变成一片灰色兜底格子。
+ * 练度分组：兵种 → 攻城机器 → 法术 → 英雄 → 战宠。
+ *
+ * 上游把攻城机器与战宠都塞在 ``troops`` 里（见 ``classifyTroop``），这里按素材目录
+ * 拆开 —— 混在一组里既看不出是什么，也没有「攻城机器」这层语义。
+ * 超级兵是本体兵种的临时强化版，练度区只看本体，否则同一个兵会占两格。
  */
 const unitGroups = computed<Array<{ key: string; label: string; units: UnitView[] }>>(() => {
   const p = profile.value
   if (!p) return []
-  const defs = [
-    { key: 'troops', label: '兵种', rows: p.troops },
-    { key: 'spells', label: '法术', rows: p.spells },
-    { key: 'heroes', label: '英雄', rows: p.heroes },
-  ] as const
 
-  return defs
-    .map((def) => ({
-      key: def.key,
-      label: def.label,
-      units: (def.rows ?? [])
-        .filter((row) => isHomeVillage(row.village))
-        .map<UnitView>((row) => ({
-          name: row.name,
-          asset: lookupUnitAsset(def.key, row.name),
-          level: typeof row.level === 'number' ? row.level : null,
-          maxLevel: typeof row.maxLevel === 'number' ? row.maxLevel : null,
-        })),
-    }))
-    .filter((group) => group.units.length > 0)
+  const troopRows = toUnitViews(p.troops, (name) => classifyTroop(name).asset).filter(
+    (unit) => !unit.asset?.superTroop,
+  )
+
+  const groups = [
+    {
+      key: 'troops',
+      label: '兵种',
+      units: troopRows.filter(
+        (unit) => unit.asset?.folder !== 'workshop' && unit.asset?.folder !== 'pet',
+      ),
+    },
+    {
+      key: 'siege',
+      label: '攻城机器',
+      units: troopRows.filter((unit) => unit.asset?.folder === 'workshop'),
+    },
+    {
+      key: 'spells',
+      label: '法术',
+      units: toUnitViews(p.spells, (name) => lookupUnitAsset('spells', name)),
+    },
+    {
+      key: 'heroes',
+      label: '英雄',
+      units: toUnitViews(p.heroes, (name) => lookupUnitAsset('heroes', name)),
+    },
+    {
+      key: 'pets',
+      label: '战宠',
+      units: troopRows.filter((unit) => unit.asset?.folder === 'pet'),
+    },
+  ]
+
+  return groups.filter((group) => group.units.length > 0)
 })
 
 /** 已取到的战报；`null` = 还在请求或请求失败 —— 两种情况都不渲染区块。 */
 const battles = ref<PlayerBattle[] | null>(null)
+
+/**
+ * 是否处于传奇段位。
+ *
+ * 官方 `/players/{tag}/battlelog` 给的是**传奇联赛**战报，非传奇玩家拿到的是空列表或
+ * 403，页面却会显示一个永远打不开的空面板。段位名有三种写法：玩家档案里的
+ * `Legend League` / `Legend League II`、维表的 `Legend I`；统一按前缀认。
+ * `league` 缺失（维表没灌数据）时按「不是传奇」处理，宁可不显示也别显示错的。
+ */
+const isLegendLeague = computed(() => {
+  const name = profile.value?.league?.name
+  return typeof name === 'string' && /^legends?\b/i.test(name.trim())
+})
 
 interface BattleRowView {
   key: string
@@ -279,12 +350,6 @@ const battleSummary = computed<string | null>(() => {
   return `进攻 ${attacks.length} 场 · 三星率 ${rate}%${tail}`
 })
 
-/** 返回上一页。直接打开详情页（没有上一页）时回查询页，别把用户甩出站点。 */
-function goBack() {
-  if (window.history.length > 1) router.back()
-  else router.push({ name: 'query' })
-}
-
 async function load() {
   const tag = String(route.params.tag ?? '')
   loading.value = true
@@ -292,12 +357,14 @@ async function load() {
   profile.value = null
   meta.value = null
   battles.value = null
-  // 战报与档案并行拉：慢一点不该拖住档案，失败也不该影响档案
-  void loadBattles(tag)
+  townHallIconBroken.value = false
   try {
     const res = await getPlayer(tag)
     profile.value = res.data
     meta.value = res.meta
+    // 只有确认是传奇段位才去拉战报：非传奇玩家的 battlelog 没有意义，
+    // 白烧一次上游额度（Token 是有配额的）
+    if (isLegendLeague.value) void loadBattles(tag)
   } catch (err) {
     error.value =
       err instanceof ApiError ? err : new ApiError('UNKNOWN_ERROR', '请求失败', 0)
@@ -322,25 +389,21 @@ watch(() => route.params.tag, load, { immediate: true })
 </script>
 
 <style scoped>
-.page-back {
-  border: none;
-  background: none;
-  padding: 0;
-  margin-bottom: 10px;
-  cursor: pointer;
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-.page-back:hover {
-  color: var(--accent-gold);
-}
-
 /* 标题与关注按钮同一行；窄屏时按钮换行到标题下面 */
 .page-head {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* 昵称旁的大本营图标：跟着标题字号走，不抢标题的视线 */
+.page-card__th {
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-left: 2px;
+  object-fit: contain;
+  vertical-align: -0.35em;
 }
 
 .page-card__lead-main {

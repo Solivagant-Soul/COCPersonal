@@ -3,13 +3,13 @@
     class="follow-btn"
     :class="{ 'follow-btn--on': followed }"
     size="small"
-    :type="followed ? 'warning' : 'default'"
-    :plain="!followed"
+    plain
     :aria-pressed="followed"
     :aria-label="followed ? `取消关注 ${tag}` : `关注 ${tag}`"
     @click="onToggle"
   >
-    {{ followed ? '★ 已关注' : '☆ 关注' }}
+    <span class="follow-btn__star" aria-hidden="true">{{ followed ? '★' : '☆' }}</span>
+    {{ followed ? '已关注' : '关注' }}
   </el-button>
 </template>
 
@@ -57,7 +57,11 @@ function onToggle() {
   /* 标题是大字号，按钮要贴住基线而不是被拉到与标题同高 */
   align-self: center;
 }
-.follow-btn--on {
+/* 已关注只点亮五角星：按钮体保持中性描边，别整颗变金 */
+.follow-btn--on .follow-btn__star {
   color: var(--accent-gold-bright);
+}
+.follow-btn__star {
+  margin-right: 4px;
 }
 </style>

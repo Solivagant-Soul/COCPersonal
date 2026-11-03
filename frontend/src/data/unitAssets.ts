@@ -12,21 +12,26 @@
  *   - 查不到的名字（官方新加单位）返回 ``null``，由组件退化成文字兜底 ——
  *     **绝不因为多了一个新兵种就白屏**。
  *   - 攻城机器在 API 里也算 ``troops``，但图在 ``workshop`` 目录，故每条都带 folder。
+ *   - 战宠同样混在 ``troops`` 里（官方没有单独的 ``pets`` 字段），素材在 ``pet`` 目录。
  */
 
-export type UnitFolder = 'army' | 'spell' | 'hero' | 'workshop'
+export type UnitFolder = 'army' | 'spell' | 'hero' | 'workshop' | 'pet'
 
 export interface UnitAsset {
   /** 国服译名，同时也是图片文件名（不带扩展名）。 */
   zh: string
   /** ``public/pictures`` 下的子目录。 */
   folder: UnitFolder
+  /** 超级兵：练度区只显示本体，否则同一个兵会占两格。 */
+  superTroop?: true
 }
 
 const troop = (zh: string): UnitAsset => ({ zh, folder: 'army' })
+const superTroop = (zh: string): UnitAsset => ({ zh, folder: 'army', superTroop: true })
 const siege = (zh: string): UnitAsset => ({ zh, folder: 'workshop' })
 const spell = (zh: string): UnitAsset => ({ zh, folder: 'spell' })
 const hero = (zh: string): UnitAsset => ({ zh, folder: 'hero' })
+const pet = (zh: string): UnitAsset => ({ zh, folder: 'pet' })
 
 /** ``troops[]``（含攻城机器与已激活的超级兵）。 */
 export const TROOP_ASSETS: Record<string, UnitAsset> = {
@@ -52,34 +57,34 @@ export const TROOP_ASSETS: Record<string, UnitAsset> = {
   Minion: troop('亡灵'),
   'P.E.K.K.A': troop('皮卡超人'),
   'Root Rider': troop('根蔓骑士'),
-  'Sneaky Goblin': troop('隐秘哥布林'),
+  'Sneaky Goblin': superTroop('隐秘哥布林'),
   Valkyrie: troop('瓦基丽武神'),
   'Wall Breaker': troop('炸弹人'),
   Witch: troop('女巫'),
   Wizard: troop('法师'),
   Yeti: troop('大雪怪'),
   'Apprentice Warden': troop('守护者学徒'),
-  // 超级兵
-  'Super Archer': troop('超级弓箭手'),
-  'Super Barbarian': troop('超级野蛮人'),
-  'Super Bowler': troop('超级巨石投手'),
-  'Super Dragon': troop('超级飞龙'),
-  'Super Giant': troop('超级巨人'),
-  'Super Hog Rider': troop('超级野猪骑士'),
-  'Super Ice Hound': troop('寒冰猎犬'),
-  'Inferno Dragon': troop('地狱飞龙'),
-  'Super Miner': troop('超级矿工'),
-  'Super Minion': troop('超级亡灵'),
-  'Rocket Balloon': troop('火箭气球兵'),
-  'Super Valkyrie': troop('超级瓦基丽武神'),
-  'Super Wall Breaker': troop('超级炸弹人'),
-  'Super Witch': troop('超级女巫'),
-  'Super Wizard': troop('超级法师'),
+  // 超级兵：本体兵种的临时强化版，练度区不单列（见 superTroop 标记）
+  'Super Archer': superTroop('超级弓箭手'),
+  'Super Barbarian': superTroop('超级野蛮人'),
+  'Super Bowler': superTroop('超级巨石投手'),
+  'Super Dragon': superTroop('超级飞龙'),
+  'Super Giant': superTroop('超级巨人'),
+  'Super Hog Rider': superTroop('超级野猪骑士'),
+  'Super Ice Hound': superTroop('寒冰猎犬'),
+  'Inferno Dragon': superTroop('地狱飞龙'),
+  'Super Miner': superTroop('超级矿工'),
+  'Super Minion': superTroop('超级亡灵'),
+  'Rocket Balloon': superTroop('火箭气球兵'),
+  'Super Valkyrie': superTroop('超级瓦基丽武神'),
+  'Super Wall Breaker': superTroop('超级炸弹人'),
+  'Super Witch': superTroop('超级女巫'),
+  'Super Wizard': superTroop('超级法师'),
   Thrower: troop('巨矛投手'),
   'Meteor Golem': troop('陨石戈仑'),
   'Ruin Witch': troop('废墟女巫'),
   Druid: troop('德鲁伊'),
-  'Super Yeti': troop('超级大雪怪'),
+  'Super Yeti': superTroop('超级大雪怪'),
   // 攻城机器：API 归在 troops 里，素材在 workshop 目录
   'Wall Wrecker': siege('攻城战车'),
   'Battle Blimp': siege('攻城飞艇'),
@@ -124,17 +129,57 @@ export const HERO_ASSETS: Record<string, UnitAsset> = {
   'Dragon Duke': hero('飞龙公爵'),
 }
 
+/** ``troops[]`` 里的战宠。上游没有独立的 ``pets`` 字段，只能靠名字认出来。 */
+export const PET_ASSETS: Record<string, UnitAsset> = {
+  'L.A.S.S.I': pet('莱希'),
+  'Mighty Yak': pet('大牦'),
+  'Electro Owl': pet('闪枭'),
+  Unicorn: pet('独角'),
+  Frosty: pet('冰牙'),
+  Diggy: pet('地兽'),
+  'Poison Lizard': pet('猛蜥'),
+  Phoenix: pet('凤凰'),
+  'Spirit Fox': pet('灵狐'),
+  Sneezy: pet('阿啾'),
+  'Greedy Raven': pet('贪婪渡鸦'),
+  'Angry Jelly': pet('愤怒水母'),
+}
+
+/** 主村练度区的分组：兵种 / 攻城机器 / 战宠。法术与英雄各自有独立字段。 */
+export type HomeUnitGroup = 'troops' | 'siege' | 'pets'
+
+/**
+ * 把 ``troops[]`` 里的一行归类。
+ *
+ * 上游把三种东西混在 ``troops`` 里：普通兵种、攻城机器（素材在 workshop）、
+ * 战宠（素材在 pet）。名字查不到就按普通兵种处理，由调用方退化成文字格子。
+ */
+export function classifyTroop(name: string): { asset: UnitAsset | null; group: HomeUnitGroup } {
+  const own = Object.prototype.hasOwnProperty.call(PET_ASSETS, name) ? PET_ASSETS[name] : null
+  if (own) return { asset: own, group: 'pets' }
+  const asset = Object.prototype.hasOwnProperty.call(TROOP_ASSETS, name)
+    ? TROOP_ASSETS[name]
+    : null
+  return { asset, group: asset?.folder === 'workshop' ? 'siege' : 'troops' }
+}
+
 /**
  * 按分组查素材。分组名与 API 字段同名，避免再发明一套名字。
  *
  * 找不到返回 ``null`` —— 调用方据此退化成文字格子，而不是渲染一个必然 404 的 img。
  */
 export function lookupUnitAsset(
-  group: 'troops' | 'spells' | 'heroes',
+  group: 'troops' | 'spells' | 'heroes' | 'pets',
   name: string,
 ): UnitAsset | null {
   const table =
-    group === 'troops' ? TROOP_ASSETS : group === 'spells' ? SPELL_ASSETS : HERO_ASSETS
+    group === 'troops'
+      ? TROOP_ASSETS
+      : group === 'spells'
+        ? SPELL_ASSETS
+        : group === 'heroes'
+          ? HERO_ASSETS
+          : PET_ASSETS
   return Object.prototype.hasOwnProperty.call(table, name) ? table[name] : null
 }
 

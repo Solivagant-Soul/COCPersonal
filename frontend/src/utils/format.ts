@@ -229,27 +229,52 @@ export function enumLabel(group: string, value: unknown): string {
 }
 
 /**
- * 联赛层级名 → 中文（`Legend I` → `传奇 I`）。
+ * 联赛层级名 → 中文（`Electro League 33` → `雷电 33`、`Legend I` → `传奇 I`）。
  *
- * 官方与 `league_tiers` 维表给的都是英文名，且有两种写法：
- *   - 玩家档案的 `league.name`：`Legend League` / `Bronze League II` / `Unranked`
- *   - `leagueTier.name`：`Legend I` / `Titan III`
- * 两种都认。别的形态（如夜世界的 `Builder Base Bronze I`、或上游换了写法）
+ * 官方 API 给的都是英文名，且随版本有三种写法：
+ *   - `Electro League 33`：2025-10「排位战」改版后的新天梯，名称 + 1–33 的编号
+ *   - `Legend I` / `Legend III`：`league_tiers` 维表里的写法
+ *   - `Bronze League II` / `Unranked`：2025-10 之前的旧奖杯天梯，历史数据里仍有
+ * 三种都认。别的形态（如夜世界的 `Builder Base Bronze I`、或上游换了写法）
  * **原样返回** —— 猜错了比不翻更糟，用户会看到一个不存在的联赛名。
  */
-const LEAGUE_TIER_ZH: Record<string, string> = {
+const LEAGUE_ZH: Record<string, string> = {
+  // 新天梯：名称按游戏内兵种命名，编号 1–33（见 Ranked Battles）
+  Skeleton: '骷髅',
+  Barbarian: '野蛮人',
+  Archer: '弓箭手',
+  Wizard: '法师',
+  Valkyrie: '瓦基丽',
+  Witch: '女巫',
+  Golem: '戈仑石人',
+  'P.E.K.K.A': '皮卡超人',
+  Titan: '泰坦',
+  Dragon: '飞龙',
+  Electro: '雷电',
+  Legend: '传奇',
+  // 旧天梯：老数据与维表里还会出现，保留映射
   Bronze: '青铜',
   Silver: '白银',
   Gold: '黄金',
   Crystal: '水晶',
   Master: '大师',
   Champion: '冠军',
-  Titan: '泰坦',
-  Legend: '传奇',
 }
 
-const LEAGUE_TIER_RE = /^(Bronze|Silver|Gold|Crystal|Master|Champion|Titan|Legend)\s+(I{1,3}|IV|V)$/
-const LEAGUE_NAMED_RE = /^(Bronze|Silver|Gold|Crystal|Master|Champion|Titan|Legend) League(?: (I{1,3}|IV|V))?$/
+// `P.E.K.K.A` 里的点必须转义，否则会被当成通配符；长的排前面，免得短名先吃掉前缀
+const LEAGUE_NAME_ALT = Object.keys(LEAGUE_ZH)
+  .sort((a, b) => b.length - a.length)
+  .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('|')
+
+/** 编号：新天梯是 1–33 的阿拉伯数字，旧天梯与维表是罗马数字。 */
+const TIER_NUMBER = '\\d{1,2}|I{1,3}|IV|V'
+
+const LEAGUE_FULL_RE = new RegExp(`^(${LEAGUE_NAME_ALT})\\s+Leagues?\\s+(${TIER_NUMBER})$`)
+const LEAGUE_SHORT_RE = new RegExp(`^(${LEAGUE_NAME_ALT})\\s+(${TIER_NUMBER})$`)
+// `Legend League` / `Legends League` / `Bronze League`
+const LEAGUE_ONLY_RE = new RegExp(`^(${LEAGUE_NAME_ALT})s?\\s+Leagues?$`)
+
 const LEAGUE_MISC_ZH: Record<string, string> = {
   Unranked: '未定级',
 }
@@ -259,15 +284,16 @@ export function formatLeagueName(name: Formattable): string {
   if (name === null || name === undefined || name === '') return PLACEHOLDER
   const text = String(name).trim()
 
-  const tier = LEAGUE_TIER_RE.exec(text)
-  if (tier) return `${LEAGUE_TIER_ZH[tier[1]]} ${tier[2]}`
+  const full = LEAGUE_FULL_RE.exec(text)
+  if (full) return `${LEAGUE_ZH[full[1]]} ${full[2]}`
 
-  const named = LEAGUE_NAMED_RE.exec(text)
-  if (named) {
-    const zh = LEAGUE_TIER_ZH[named[1]]
+  const short = LEAGUE_SHORT_RE.exec(text)
+  if (short) return `${LEAGUE_ZH[short[1]]} ${short[2]}`
+
+  const only = LEAGUE_ONLY_RE.exec(text)
+  if (only) {
     // 「Legend League」是最高段位的总称，加「联赛」二字反而不像段位名
-    if (!named[2]) return named[1] === 'Legend' ? '传奇联赛' : `${zh}联赛`
-    return `${zh} ${named[2]}`
+    return only[1] === 'Legend' ? '传奇联赛' : `${LEAGUE_ZH[only[1]]}联赛`
   }
 
   return LEAGUE_MISC_ZH[text] ?? text

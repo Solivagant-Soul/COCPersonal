@@ -36,6 +36,8 @@ const okPlayer = {
     expLevel: 205,
     trophies: 4902,
     clan: { tag: '#2PP', name: 'Reddit Zulu' },
+    // 传奇段位：战报区只对传奇玩家显示（见 PlayerDetail 的 isLegendLeague）
+    league: { id: 105000036, name: 'Legend I' },
   },
   meta: { cache: 'HIT', fetchedAt: '2026-01-01T00:00:00Z', ageSeconds: 5, ttlSeconds: 60 },
 }
@@ -208,13 +210,16 @@ describe('PlayerDetail', () => {
     expect(icon.attributes('src')).toContain('l.png')
   })
 
-  it('练度区：兵种/法术/英雄分组渲染，夜世界单位不出现', async () => {
+  it('练度区：兵种/攻城机器/法术/英雄/战宠分组渲染，夜世界单位不出现', async () => {
     vi.mocked(getPlayer).mockResolvedValue({
       ...okPlayer,
       data: {
         ...okPlayer.data,
         troops: [
           { name: 'Barbarian', level: 11, maxLevel: 12, village: 'home' },
+          { name: 'Super Barbarian', level: 11, maxLevel: 11, village: 'home' },
+          { name: 'Wall Wrecker', level: 5, maxLevel: 5, village: 'home' },
+          { name: 'L.A.S.S.I', level: 10, maxLevel: 10, village: 'home' },
           { name: 'Raged Barbarian', level: 18, maxLevel: 18, village: 'builderBase' },
         ],
         spells: [{ name: 'Lightning Spell', level: 10, maxLevel: 11, village: 'home' }],
@@ -225,13 +230,57 @@ describe('PlayerDetail', () => {
     const w = await mountAt()
 
     const labels = w.findAll('.unit-group__label').map((n) => n.text())
-    expect(labels).toEqual(['兵种', '法术', '英雄'])
+    expect(labels).toEqual(['兵种', '攻城机器', '法术', '英雄', '战宠'])
 
-    // 主村 1 个兵 + 1 法术 + 1 英雄；夜世界那条被过滤掉
-    expect(w.findAll('.unit-tile')).toHaveLength(3)
+    // 主村 1 兵 + 1 攻城机器 + 1 法术 + 1 英雄 + 1 战宠；超级兵与夜世界那条都被过滤掉
+    expect(w.findAll('.unit-tile')).toHaveLength(5)
+    expect(w.text()).not.toContain('超级野蛮人')
     expect(w.text()).not.toContain('Raged Barbarian')
     // 等级角标照常显示
     expect(w.find('.unit-tile__level').text()).toBe('11')
+  })
+
+  it('满级单位的等级数字换成金底（与普通等级区分）', async () => {
+    vi.mocked(getPlayer).mockResolvedValue({
+      ...okPlayer,
+      data: {
+        ...okPlayer.data,
+        troops: [
+          { name: 'Barbarian', level: 8, maxLevel: 12, village: 'home' },
+          { name: 'Archer', level: 12, maxLevel: 12, village: 'home' },
+        ],
+      },
+    } as never)
+
+    const w = await mountAt()
+
+    const maxTile = w.find('.unit-tile--max')
+    expect(maxTile.exists()).toBe(true)
+    // 只有练满的那个带 --max 标记，8/12 的那个不带
+    expect(w.findAll('.unit-tile--max')).toHaveLength(1)
+    expect(maxTile.find('.unit-tile__level').text()).toBe('12')
+  })
+
+  it('大本营图标：按 townHallLevel 取对应素材', async () => {
+    vi.mocked(getPlayer).mockResolvedValue({
+      ...okPlayer,
+      data: { ...okPlayer.data, townHallLevel: 15 },
+    } as never)
+
+    const w = await mountAt()
+
+    const icon = w.find('.page-card__th')
+    expect(icon.exists()).toBe(true)
+    expect(icon.attributes('src')).toBe('/pictures/townhall/TH15.png')
+    expect(icon.attributes('alt')).toContain('15')
+  })
+
+  it('大本营等级缺失时不渲染图标', async () => {
+    vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
+
+    const w = await mountAt()
+
+    expect(w.find('.page-card__th').exists()).toBe(false)
   })
 
   it('关注按钮：点击后写入本地存储并变成「已关注」', async () => {
@@ -247,12 +296,59 @@ describe('PlayerDetail', () => {
     expect(localStorage.getItem('cocpersonal.favorites')).toContain('#9QJ8L0')
   })
 
-  it('详情页有「返回」按钮', async () => {
+  it('关注按钮：已关注只点亮五角星，按钮本身不变色', async () => {
+    vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
+
+    const w = await mountAt()
+    await w.find('.follow-btn').trigger('click')
+
+    const btn = w.find('.follow-btn')
+    expect(btn.find('.follow-btn__star').text()).toBe('★')
+    // 曾经的实现给按钮加了 type="warning"，整颗按钮变金
+    expect(btn.classes()).not.toContain('el-button--warning')
+  })
+
+  it('返回按钮在卡片外（页面左上角），不在卡片里', async () => {
     vi.mocked(getPlayer).mockResolvedValue(okPlayer as never)
 
     const w = await mountAt()
 
-    expect(w.find('.page-back').exists()).toBe(true)
+    const back = w.find('.page-back')
+    expect(back.exists()).toBe(true)
+    expect(w.find('.page-card .page-back').exists()).toBe(false)
+  })
+
+  it('非传奇段位：不显示传奇联赛战报，也不去请求战报', async () => {
+    vi.mocked(getPlayer).mockResolvedValue({
+      ...okPlayer,
+      data: {
+        ...okPlayer.data,
+        league: { id: 105000033, name: 'Electro League 33' },
+      },
+    } as never)
+
+    const w = await mountAt()
+
+    expect(w.find('.battle-panel').exists()).toBe(false)
+    expect(getPlayerBattles).not.toHaveBeenCalled()
+  })
+
+  it('联赛格：新天梯的 `Electro League 33` 翻成中文', async () => {
+    vi.mocked(getPlayer).mockResolvedValue({
+      ...okPlayer,
+      data: {
+        ...okPlayer.data,
+        league: {
+          id: 105000033,
+          name: 'Electro League 33',
+          iconUrls: { small: 'https://api-assets.clashofclans.com/leagues/small/e.png' },
+        },
+      },
+    } as never)
+
+    const w = await mountAt()
+
+    expect(w.find('.stat-grid').text()).toContain('雷电 33')
   })
 
   it('战报区：逐条渲染时间、星级、摧毁率、攻/防标签与小图标', async () => {

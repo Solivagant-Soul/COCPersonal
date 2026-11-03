@@ -52,8 +52,9 @@ defineProps<{ items: StatItem[] }>()
   color: var(--text-primary);
 }
 .stat-grid__icon {
-  width: 24px;
-  height: 24px;
+  /* 联赛徽章要看得出是哪一段：24px 太小，与数值同高才像「图标 + 名字」 */
+  width: 48px;
+  height: 48px;
   flex-shrink: 0;
   object-fit: contain;
 }

@@ -1,8 +1,8 @@
 <template>
   <div class="page">
-    <section class="page-card">
-      <button type="button" class="page-back" @click="goBack">← 返回</button>
+    <BackButton />
 
+    <section class="page-card">
       <div class="page-head">
         <!-- 徽章缺图时不占位，标题照常靠左 -->
         <img
@@ -106,7 +106,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
 import {
   getClan,
@@ -115,6 +115,7 @@ import {
   type ClanMemberRow,
 } from '../api/endpoints'
 import { ApiError, type Meta } from '../api/request'
+import BackButton from '../components/BackButton.vue'
 import ErrorCard from '../components/ErrorCard.vue'
 import FollowButton from '../components/FollowButton.vue'
 import LoadingBlock from '../components/LoadingBlock.vue'
@@ -122,7 +123,6 @@ import StatGrid from '../components/StatGrid.vue'
 import { enumLabel, formatLeagueName, formatNumber } from '../utils/format'
 
 const route = useRoute()
-const router = useRouter()
 
 const loading = ref(false)
 const error = ref<ApiError | null>(null)
@@ -219,29 +219,10 @@ async function load() {
   }
 }
 
-/** 返回上一页。直接打开详情页（没有上一页）时回查询页，别把用户甩出站点。 */
-function goBack() {
-  if (window.history.length > 1) router.back()
-  else router.push({ name: 'query' })
-}
-
 watch(() => route.params.tag, load, { immediate: true })
 </script>
 
 <style scoped>
-.page-back {
-  border: none;
-  background: none;
-  padding: 0;
-  margin-bottom: 10px;
-  cursor: pointer;
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-.page-back:hover {
-  color: var(--accent-gold);
-}
-
 /* 标题与关注按钮同一行；窄屏时按钮换行到标题下面 */
 .page-head {
   display: flex;

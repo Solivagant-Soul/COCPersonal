@@ -141,9 +141,18 @@ describe('formatLeagueName', () => {
 
   it('档案里的 `X League` 写法也翻（`Legend League` → `传奇联赛`）', () => {
     expect(formatLeagueName('Legend League')).toBe('传奇联赛')
+    expect(formatLeagueName('Legends League')).toBe('传奇联赛')
     expect(formatLeagueName('Bronze League II')).toBe('青铜 II')
     expect(formatLeagueName('Silver League')).toBe('白银联赛')
     expect(formatLeagueName('Unranked')).toBe('未定级')
+  })
+
+  it('2025-10 之后的新天梯：名称 + 1–33 的编号', () => {
+    expect(formatLeagueName('Electro League 33')).toBe('雷电 33')
+    expect(formatLeagueName('Electro 31')).toBe('雷电 31')
+    expect(formatLeagueName('P.E.K.K.A League 22')).toBe('皮卡超人 22')
+    expect(formatLeagueName('Skeleton 1')).toBe('骷髅 1')
+    expect(formatLeagueName('Legend League III')).toBe('传奇 III')
   })
 
   it('其它形态原样返回，不猜', () => {

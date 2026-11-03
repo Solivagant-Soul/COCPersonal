@@ -149,12 +149,13 @@ describe('ClanDetail', () => {
     expect(w.text()).toContain('数据可能过期')
   })
 
-  it('详情页有「返回」按钮', async () => {
+  it('返回按钮在卡片外（页面左上角），不在卡片里', async () => {
     vi.mocked(getClan).mockResolvedValue(okClan as never)
 
     const w = await mountAt()
 
     expect(w.find('.page-back').exists()).toBe(true)
+    expect(w.find('.page-card .page-back').exists()).toBe(false)
   })
 
   it('关注按钮：点击后写入本地存储并变成「已关注」', async () => {
