@@ -775,20 +775,24 @@ not endorsed by Supercell.*）。本站同样不是 Supercell 官方站点、未
 
 `scripts/fetch_fankit_assets.py` 把《部落冲突》图标下到
 **`frontend/public/pictures/`** —— 就是 `web` 容器只读挂载进 nginx 的那个宿主目录。
-当前 **148 个文件 / 约 246 MB**，按 `army` / `equipment` / `hero` / `pet` / `spell` /
-`workshop` 分类，文件名是国服译名。
+当前 **166 个文件 / 约 247 MB**，按 `army` / `equipment` / `hero` / `pet` / `spell` /
+`townhall` / `workshop` 分类，文件名是国服译名（`townhall` 例外，直接叫 `TH{等级}.png`）。
 
 **这个目录在 `.gitignore` 里**（`.gitignore` 的 `pictures/` 会匹配任意层级）——
 它**不在版本库里，也不在镜像里**。线上要让 `/pictures/...` 能访问，必须满足两个条件：
 
-1. 宿主机的 `frontend/public/pictures/` 存在且有图（`find ... -type f | wc -l` 应为 148）
+> 大本营图标（`townhall/TH{1..18}.png`）是例外：Fankit 原图有 12–19 MB，
+> 而页面上只当 32px 图标用，脚本会让 CDN 直接缩到 192px（每张 40–80 KB），
+> 所以这一类的体积和其他图标是同一量级。
+
+1. 宿主机的 `frontend/public/pictures/` 存在且有图（`find ... -type f | wc -l` 应为 166）
 2. `docker-compose.yml` 里 `web.volumes` 的那行只读挂载在：
 
    ```yaml
    - ./frontend/public/pictures:/usr/share/nginx/html/pictures:ro
    ```
 
-   `frontend/.dockerignore` 刻意排除 `public/pictures`，避免 246 MB 灌进构建上下文。
+   `frontend/.dockerignore` 刻意排除 `public/pictures`，避免 247 MB 灌进构建上下文。
 
 ### 补图：`./deploy/compose.sh sync-assets`
 
@@ -850,4 +854,4 @@ curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
 只在「详情」里以文字展示。
 
 > `git clean -fdx` 会删掉这批图（被忽略的未跟踪文件），重建跑
-> `./deploy/compose.sh sync-assets` 即可（约 246 MB，几分钟）。
+> `./deploy/compose.sh sync-assets` 即可（约 247 MB，几分钟）。

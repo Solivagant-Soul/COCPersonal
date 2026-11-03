@@ -12,9 +12,10 @@ Fankit 是 Frontify 品牌门户，页面由 JS 渲染，HTML 里拿不到图，
 * 原图：返回的 ``generic_url`` 形如 ``...png?width={width}``，把占位符换成足够
   大的值，CDN 就会回原始文件而不是缩略图
 
-图片按 army / equipment / hero / pet / spell / workshop 六类落到
+图片按 army / equipment / hero / pet / spell / townhall / workshop 七类落到
 ``frontend/public/pictures/``（nginx 只读挂载的就是这个目录），文件名用国服官方
-译名（译名表见 ``CATALOG``）。该目录已在 ``.gitignore`` 中忽略，不要提交进库。
+译名（译名表见 ``CATALOG``）；大本营图标没有译名，直接用 ``TH{等级}``。
+该目录已在 ``.gitignore`` 中忽略，不要提交进库。
 
 线上补图直接跑 ``./deploy/compose.sh sync-assets``（见 ``docs/deployment.md`` §14）。
 
@@ -43,6 +44,11 @@ BASE = "https://fankit.supercell.com"
 DOCUMENT_ID = 338  # 门户里 "Game assets" 这个资源库的 document id
 PAGE_LIMIT = 100
 WIDTH_PLACEHOLDER = "9999"  # 大到超过任何原图宽度，CDN 就回原图
+
+# 分类 -> 下载宽度（像素）。默认 WIDTH_PLACEHOLDER 取原图：图标本来就只有几十 KB。
+# 大本营建筑渲染图的原图有 12–19 MB，而页面上只当 32px 图标用 —— 直接让 CDN 缩，
+# 别把上百 MB 的素材传到线上。
+WIDTH_BY_CATEGORY: dict[str, int] = {"townhall": 192}
 WORKERS = 6
 RETRIES = 3
 
@@ -240,6 +246,29 @@ CATALOG: dict[str, list[tuple[str, list[str]]]] = {
         ("弓箭女皇_弓", ["Icon_HV_Hero_Archer_Queen_Bow"]),
         ("野蛮人之王_拳", ["Icon_HV_Hero_Barbarian_King_Fist"]),
     ],
+    # 大本营图标：玩家昵称旁按等级显示，文件名直接叫 TH{等级}。
+    # 1–11 级 Fankit 只有一张，12 级起是 `_1/_2/_3` 三种镜头，取 `_1`；
+    # 17/18 级没有 `Building_HV_...` 系列，退到整图（同样是透明底）。
+    "townhall": [
+        ("TH1", ["Building_HV_Town_Hall_level_1"]),
+        ("TH2", ["Building_HV_Town_Hall_level_2"]),
+        ("TH3", ["Building_HV_Town_Hall_level_3"]),
+        ("TH4", ["Building_HV_Town_Hall_level_4"]),
+        ("TH5", ["Building_HV_Town_Hall_level_5"]),
+        ("TH6", ["Building_HV_Town_Hall_level_6"]),
+        ("TH7", ["Building_HV_Town_Hall_level_7"]),
+        ("TH8", ["Building_HV_Town_Hall_level_8"]),
+        ("TH9", ["Building_HV_Town_Hall_level_9"]),
+        ("TH10", ["Building_HV_Town_Hall_level_10"]),
+        ("TH11", ["Building_HV_Town_Hall_level_11"]),
+        ("TH12", ["Building_HV_Town_Hall_level_12_1"]),
+        ("TH13", ["Building_HV_Town_Hall_level_13_1"]),
+        ("TH14", ["Building_HV_Town_Hall_level_14_1"]),
+        ("TH15", ["Building_HV_Town_Hall_level_15_1"]),
+        ("TH16", ["Building_HV_Town_Hall_level_16_1"]),
+        ("TH17", ["TH17_HV_01"]),
+        ("TH18", ["TH18_Transparent_Cam01_Warm_4K"]),
+    ],
 }
 
 
@@ -333,7 +362,9 @@ def build_plan(assets: list[dict], only: set[str] | None) -> tuple[list[dict], l
                     "ext": asset.get("ext", "png"),
                     "width": asset.get("width", 0),
                     "height": asset.get("height", 0),
-                    "url": asset["generic_url"].replace("{width}", WIDTH_PLACEHOLDER),
+                    "url": asset["generic_url"].replace(
+                        "{width}", str(WIDTH_BY_CATEGORY.get(category, WIDTH_PLACEHOLDER))
+                    ),
                 }
             )
     return plan, missing
@@ -401,7 +432,7 @@ def main() -> int:
     parser.add_argument(
         "--only",
         default="",
-        help="只处理指定分类，逗号分隔：army,equipment,hero,pet,spell,workshop",
+        help="只处理指定分类，逗号分隔：army,equipment,hero,pet,spell,townhall,workshop",
     )
     args = parser.parse_args()
 
