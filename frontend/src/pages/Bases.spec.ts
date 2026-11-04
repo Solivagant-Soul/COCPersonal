@@ -1,21 +1,90 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('../api/endpoints', () => ({ getBases: vi.fn(), uploadBase: vi.fn() }))
+
+import { getBases } from '../api/endpoints'
 import { installElementPlus } from '../plugins/element'
 import Bases from './Bases.vue'
 
-describe('Bases', () => {
-  it('渲染阵型占位卡片', () => {
-    const w = mount(Bases, { global: { plugins: [{ install: installElementPlus }] } })
+const items = [
+  {
+    id: 1,
+    title: '#1 18本传奇防守阵',
+    thLevel: 18,
+    layoutLink: 'https://link.clashofclans.com/?id=a',
+    imagePath: '/media/bases/a.jpg',
+    sourceUrl: 'https://b23.tv/x',
+    sourceSite: 'bilibili',
+    createdAt: '2026-11-04T00:00:00Z',
+  },
+  {
+    id: 2,
+    title: '#2 国服手摆',
+    thLevel: 18,
+    layoutLink: null,
+    imagePath: null,
+    sourceUrl: null,
+    sourceSite: 'bilibili',
+    createdAt: '2026-11-04T00:00:00Z',
+  },
+]
 
-    expect(w.text()).toContain('阵型')
-    expect(w.text()).toContain('阵型功能开发中，敬请期待')
-  })
+function mountBases() {
+  return mount(Bases, { global: { plugins: [{ install: installElementPlus }] } })
+}
 
-  it('用与其他页签一致的卡片外壳（标题在卡内，且只有一张卡）', () => {
-    const w = mount(Bases, { global: { plugins: [{ install: installElementPlus }] } })
+beforeEach(() => {
+  vi.mocked(getBases).mockReset()
+  vi.mocked(getBases).mockResolvedValue({
+    data: { items, total: 3 },
+    meta: { cache: 'HIT', fetchedAt: null, ageSeconds: null, ttlSeconds: 0 },
+  } as never)
+})
 
-    expect(w.findAll('.page-card')).toHaveLength(1)
-    expect(w.find('.page-card .page-card__title').text()).toBe('阵型')
-  })
+it('渲染阵型卡片与 TH 徽标', async () => {
+  const w = mountBases()
+  await flushPromises()
+  expect(w.findAll('.base-card')).toHaveLength(2)
+  expect(w.text()).toContain('#1 18本传奇防守阵')
+  expect(w.text()).toContain('TH18')
+})
+
+it('无链接的条目不渲染复制按钮', async () => {
+  const w = mountBases()
+  await flushPromises()
+  expect(w.findAll('.base-card__copy')).toHaveLength(1)
+  expect(w.text()).toContain('国服需照图手摆')
+})
+
+it('复制按钮写入剪贴板', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+  const w = mountBases()
+  await flushPromises()
+  await w.find('.base-card__copy').trigger('click')
+  expect(writeText).toHaveBeenCalledWith('https://link.clashofclans.com/?id=a')
+})
+
+it('加载更多请求下一页', async () => {
+  const w = mountBases()
+  await flushPromises()
+  await w.find('.bases-more').trigger('click')
+  await flushPromises()
+  expect(getBases).toHaveBeenLastCalledWith(null, 2, 24)
+})
+
+it('切换等级重置到第一页并带 th_level', async () => {
+  const w = mountBases()
+  await flushPromises()
+  w.findComponent({ name: 'ElRadioGroup' }).vm.$emit('update:modelValue', 18)
+  await flushPromises()
+  expect(getBases).toHaveBeenLastCalledWith(18, 1, 24)
+})
+
+it('点击上传按钮打开弹窗', async () => {
+  const w = mountBases()
+  await flushPromises()
+  await w.find('.bases-upload').trigger('click')
+  expect(w.findComponent({ name: 'ElDialog' }).props('modelValue')).toBe(true)
 })
