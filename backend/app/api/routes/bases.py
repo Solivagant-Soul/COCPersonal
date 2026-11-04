@@ -19,9 +19,10 @@ import secrets
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
 from app.api.schemas import DEFAULT_PAGE_SIZE, DataOut, MetaOut, clamp_page_size
@@ -135,6 +136,17 @@ def save_image(
     name = f"{uuid.uuid4().hex}.{ext}"
     (target / name).write_bytes(data)
     return f"/media/{rel_dir.as_posix()}/{name}"
+
+
+def mount_media(app: FastAPI, media_root: Path | None = None) -> None:
+    """把媒体目录挂到 ``/media``，供本地开发与自托管使用。
+
+    **目录不存在就什么都不做**（也不创建）：生产上 ``/data/media`` 由卷提供，
+    本地没配 ``MEDIA_ROOT`` 时不该因为一个空目录把应用起不来。
+    """
+    root = media_root if media_root is not None else _media_root()
+    if root.is_dir():
+        app.mount("/media", StaticFiles(directory=root), name="media")
 
 
 def _unauthorized(message: str) -> JSONResponse:

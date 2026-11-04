@@ -145,3 +145,30 @@ async def test_upload_is_idempotent(client, session, admin_env, media_root):
     assert second.json()["data"]["duplicated"] is True
     count = (await session.execute(select(func.count()).select_from(BaseLayout))).scalar_one()
     assert count == 1
+
+# --- Task 3: 本地媒体静态服务 ---
+
+import httpx
+from fastapi import FastAPI
+
+
+async def test_mount_media_serves_existing_file(tmp_path):
+    (tmp_path / "x.txt").write_text("hi", encoding="utf-8")
+    app = FastAPI()
+    bases.mount_media(app, tmp_path)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://t"
+    ) as c:
+        resp = await c.get("/media/x.txt")
+
+    assert resp.status_code == 200 and resp.text == "hi"
+
+
+async def test_mount_media_skips_missing_dir(tmp_path):
+    app = FastAPI()
+    bases.mount_media(app, tmp_path / "nope")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://t"
+    ) as c:
+        assert (await c.get("/media/x.txt")).status_code == 404

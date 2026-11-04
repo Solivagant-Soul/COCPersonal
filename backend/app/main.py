@@ -154,6 +154,8 @@ def create_app() -> FastAPI:
 
     # 后台。凭据只来自环境变量（ADMIN_USERNAME / ADMIN_PASSWORD），不入库。
     # 官方数据与采集表在后台全部只读或未注册，见 admin.py 的说明。
+    # 媒体目录（阵型图片）挂在 /media，目录不存在时 mount_media 自己跳过。
+    bases.mount_media(app)
     app.state.admin = admin.build_admin(app, engine, settings)
     return app
 
