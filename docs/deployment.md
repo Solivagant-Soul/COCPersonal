@@ -914,6 +914,8 @@ curl -s -o /dev/null -w '%{http_code} %{content_type}\n' \
 
 ### 本地开发
 
-`backend/.env` 加 `MEDIA_ROOT=.media`（相对 `backend/`），Vite 已把 `/media`
-代理到 `127.0.0.1:8000`；不设的话默认 `/data/media` 在 Windows 上不可写，
-上传会 500。批量导入见 `.opencode/skills/coc-base-import/SKILL.md`。
+`backend/.env` 加 `MEDIA_ROOT=.media`（相对 `backend/`），**并在启动前建好该目录**
+（`New-Item -ItemType Directory -Force backend/.media`；目录不存在时 `/media` 不会挂载，
+图片要重启后才可访问）。Vite 已把 `/media` 代理到 `127.0.0.1:8000`；不设的话默认
+`/data/media` 在 Windows 上不可写，上传会 500。批量导入见
+`.opencode/skills/coc-base-import/SKILL.md`。

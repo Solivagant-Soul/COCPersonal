@@ -141,8 +141,9 @@ def save_image(
 def mount_media(app: FastAPI, media_root: Path | None = None) -> None:
     """把媒体目录挂到 ``/media``，供本地开发与自托管使用。
 
-    **目录不存在就什么都不做**（也不创建）：生产上 ``/data/media`` 由卷提供，
-    本地没配 ``MEDIA_ROOT`` 时不该因为一个空目录把应用起不来。
+    **目录不存在就什么都不做**（也不创建）：生产上 ``/data/media`` 由卷提供；
+    本地首次上传前先手工建 ``backend/.media``，否则挂载会跳过，图片要重启后
+    才可访问。
     """
     root = media_root if media_root is not None else _media_root()
     if root.is_dir():

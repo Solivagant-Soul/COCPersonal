@@ -48,6 +48,7 @@ cd backend
 Copy-Item .env.example .env        # 填值；COC_API_TOKEN 留空 = 夹具模式（见下）
 # 本地阵型图片目录（相对 backend/；不设则用默认 /data/media，Windows 上写不进去）
 # 在 backend/.env 里加一行：MEDIA_ROOT=.media
+New-Item -ItemType Directory -Force .media | Out-Null   # 必须在启动前建好，否则 /media 不挂载
 alembic upgrade head               # 建表（首次、或迁移有更新时）
 python -m app.cli seed-dev-rankings # 灌入夹具排行（无 Token 时排行榜才有数据）
 python -m uvicorn app.main:app --reload --port 8000
@@ -64,8 +65,8 @@ npm run dev                        # http://localhost:5173（/api 已反代到 :
 ### 测试与构建
 
 ```powershell
-cd backend;  python -m pytest -q     # 639 passed
-cd frontend; npm run test            # 125 passed（Vitest）
+cd backend;  python -m pytest -q     # 683 passed
+cd frontend; npm run test            # 182 passed（Vitest）
 cd frontend; npm run build           # vue-tsc 类型检查 + 产物到 frontend/dist/
 ```
 
