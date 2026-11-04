@@ -106,9 +106,10 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* 固定两列：1440 视口下每张卡约 527px（含侧边栏），配兵图标与详情都能横向铺开。 */
 .army-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   margin: 0;
   padding: 0;
@@ -153,9 +154,10 @@ onMounted(load)
   color: var(--accent-gold);
 }
 
+/* 卡片够宽，四项指标直接排一行；手机上再退回两列。 */
 .army-card__stats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
@@ -182,10 +184,17 @@ onMounted(load)
   margin-top: 16px;
 }
 
-/* 窄屏单列：两张卡并排时数字会挤成一行放不下 */
-@media (max-width: 560px) {
+/* 窄屏单列：再窄下去两张卡各自不到 400px，配兵图标会挤成竖条。 */
+@media (max-width: 860px) {
   .army-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 手机宽度：四项统计挤一行时「平均摧毁率」会被拆成两行。 */
+@media (max-width: 480px) {
+  .army-card__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>
