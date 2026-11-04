@@ -112,9 +112,10 @@
 | `source_site` | text | 否 | ≤ 50，默认 `bilibili` |
 
 - `layout_link` 与 `image` **至少一个**，否则 400 `INVALID_PARAMS`
-- 图片校验：先看 `Content-Type`，再读前 12 字节比对 magic bytes
-  （JPEG `FFD8FF`、PNG `89504E47`、WebP `RIFF....WEBP`）；不符返回 400。
-  读取时最多读 `5 MiB + 1` 字节，超出返回 `413 PAYLOAD_TOO_LARGE`
+- 图片校验：**忽略客户端声明的 `Content-Type`**，读取前 12 字节按 magic bytes 判定
+  （JPEG `FFD8FF`、PNG `89504E47`、WebP `RIFF....WEBP`）；都不匹配一律 400
+  —— 扩展名与 Content-Type 都不可信
+- 读取时最多读 `5 MiB + 1` 字节，超出返回 `413 PAYLOAD_TOO_LARGE`
 - 落盘：`{MEDIA_ROOT}/bases/YYYY/MM/{uuid4}.{jpg|png|webp}`，目录按需创建
 - 入库：`image_path` 存相对 URL `/media/bases/YYYY/MM/<uuid>.<ext>`，
   `is_published = true`，`source_site` 默认 `bilibili`，`created_at = now(UTC)`
@@ -149,7 +150,7 @@
 3. `page_size=500` 截断为 50 且返回 200
 4. 上传：无 `Authorization` → 401；密码错 → 401；环境变量为空 → 401
 5. 上传 PNG：201、`is_published=true`、文件落在 `MEDIA_ROOT` 下、`imagePath` 以 `/media/` 开头
-6. JPEG 扩展名伪装成 PNG（magic bytes 不符）→ 400
+6. 名为 `.png` 的文本文件（magic bytes 不是任何图片）→ 400
 7. 超过 5 MiB → 413
 8. 既无链接又无图片 → 400
 9. 同内容重复上传 → 第二次 200 且 `duplicated=true`，记录数仍为 1
