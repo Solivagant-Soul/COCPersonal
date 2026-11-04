@@ -23,6 +23,7 @@ from app.api.deps import get_coc_client  # noqa: F401  （暴露给依赖注入�
 from app.api.errors import coc_error_handler
 from app.api.routes import (
     admin,
+    bases,
     clans,
     content,
     players,
@@ -147,6 +148,7 @@ def create_app() -> FastAPI:
     # /rankings/{kind} 多两段，不会互相截胡
     app.include_router(warreport.router)
     app.include_router(upgrade.router)
+    app.include_router(bases.router)
     app.include_router(content.router)
     app.include_router(submissions.router)
 
