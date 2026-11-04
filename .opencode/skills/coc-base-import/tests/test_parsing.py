@@ -1,3 +1,6 @@
+from pathlib import Path
+
+import pipeline
 from bili_links import extract_pinned_texts, normalize_layout_link, parse_layout_codes
 from pipeline import frame_timestamps
 
@@ -41,3 +44,41 @@ def test_extract_pinned_texts_reads_top_replies():
         }
     }
     assert extract_pinned_texts(payload) == ["笔记"]
+
+
+def test_download_video_ignores_other_videos_cache(tmp_path, monkeypatch):
+    """换个视频重跑时不能复用上一个视频的缓存文件。"""
+    # 旧版布局（共用一个 video.*）与别的视频的缓存目录都不该被采纳。
+    (tmp_path / "video.mp4").write_bytes(b"legacy")
+    other = tmp_path / "BV0000000000"
+    other.mkdir()
+    (other / "video.mp4").write_bytes(b"other")
+
+    def fake_run(cmd, check):
+        assert check is True
+        out = Path(cmd[cmd.index("-o") + 1].replace("%(ext)s", "mp4"))
+        out.write_bytes(b"new")
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+
+    video = pipeline.download_video(
+        "https://www.bilibili.com/video/BV1qHpY62EoT/", tmp_path
+    )
+    assert video.read_bytes() == b"new"
+    assert video.parent == tmp_path / "BV1qHpY62EoT"
+
+
+def test_download_video_reuses_same_video_cache(tmp_path, monkeypatch):
+    target = tmp_path / "BV1qHpY62EoT"
+    target.mkdir()
+    (target / "video.mp4").write_bytes(b"cached")
+
+    def fail_run(cmd, check):  # pragma: no cover - 走到这里就是又下载了
+        raise AssertionError("不该重复下载同一个视频")
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fail_run)
+
+    video = pipeline.download_video(
+        "https://www.bilibili.com/video/BV1qHpY62EoT/", tmp_path
+    )
+    assert video.read_bytes() == b"cached"

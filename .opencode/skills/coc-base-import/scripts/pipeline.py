@@ -54,10 +54,23 @@ def video_duration(video: Path) -> float:
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
-def download_video(video_url: str, workdir: Path) -> Path:
+def video_cache_dir(workdir: Path, bvid: str) -> Path:
+    """每个视频独占一个缓存目录：``{workdir}/{BV号}/``。
+
+    **不能共用一个 ``workdir/video.*``**：换了 ``--video-url`` 重跑时会命中
+    上一个视频的缓存，抽出来的是别人的画面，而链接按新视频解析 —— 两边编号
+    对不上却不会报错。
+    """
+    return Path(workdir) / bvid
+
+
+def download_video(video_url: str, workdir: Path, bvid: str | None = None) -> Path:
     """下载 720p 以内的单文件版本（不合并，避免依赖 PATH 上的 ffmpeg）。"""
-    workdir.mkdir(parents=True, exist_ok=True)
-    existing = sorted(workdir.glob("video.*"))
+    bvid = bvid or bili_links.extract_bvid(video_url)
+    target = video_cache_dir(workdir, bvid)
+    target.mkdir(parents=True, exist_ok=True)
+
+    existing = sorted(target.glob("video.*"))
     if existing:
         return existing[0]
 
@@ -69,11 +82,11 @@ def download_video(video_url: str, workdir: Path) -> Path:
         "b[height<=720][ext=mp4]/b[height<=720]",
         "--no-playlist",
         "-o",
-        str(workdir / "video.%(ext)s"),
+        str(target / "video.%(ext)s"),
         video_url,
     ]
     subprocess.run(cmd, check=True)
-    videos = sorted(workdir.glob("video.*"))
+    videos = sorted(target.glob("video.*"))
     if not videos:
         raise RuntimeError("yt-dlp 没有产出视频文件")
     return videos[0]
@@ -214,9 +227,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     mapping = load_mapping(args.mapping)
-    video = download_video(args.video_url, workdir)
+    video = download_video(args.video_url, workdir, bvid)
     duration = video_duration(video)
-    frames = extract_frames(video, frame_timestamps(duration, args.count), workdir / "frames")
+    frames = extract_frames(
+        video, frame_timestamps(duration, args.count), video.parent / "frames"
+    )
 
     rows = build_rows(args.th_level, links, mapping, frames)
     for row, ts in zip(rows, frame_timestamps(duration, args.count), strict=True):
