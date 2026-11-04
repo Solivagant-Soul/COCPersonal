@@ -52,9 +52,9 @@ defineProps<{ items: StatItem[] }>()
   color: var(--text-primary);
 }
 .stat-grid__icon {
-  /* 联赛徽章要看得出是哪一段：24px 太小，与数值同高才像「图标 + 名字」 */
-  width: 48px;
-  height: 48px;
+  /* 联赛徽章要看得出是哪一段：24px 太小、48px 又压过数值，取中间值 */
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   object-fit: contain;
 }

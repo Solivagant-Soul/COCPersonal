@@ -399,11 +399,11 @@ watch(() => route.params.tag, load, { immediate: true })
 
 /* 昵称旁的大本营图标：跟着标题字号走，不抢标题的视线 */
 .page-card__th {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.75rem;
+  height: 2.75rem;
   margin-left: 2px;
   object-fit: contain;
-  vertical-align: -0.35em;
+  vertical-align: -0.4em;
 }
 
 .page-card__lead-main {
