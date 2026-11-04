@@ -855,3 +855,65 @@ curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
 
 > `git clean -fdx` 会删掉这批图（被忽略的未跟踪文件），重建跑
 > `./deploy/compose.sh sync-assets` 即可（约 247 MB，几分钟）。
+
+## 15. 阵型上传与媒体目录
+
+阵型图片**不走构建产物**：`api` 容器写 `media` 卷，`web` 容器的 nginx 把
+`/media/` 以只读方式挂同一个卷并 `alias /data/media/`（见 `deploy/nginx.conf`）。
+所以：
+
+- 库里只存 `/media/bases/YYYY/MM/<uuid>.<ext>` 相对 URL，换域名不用改数据；
+- 备份要连 `media` 卷一起备（§7）；
+- **改卷挂载后必须 `./deploy/compose.sh up -d web` 重建容器**，`nginx -s reload` 不够。
+
+### 上传接口
+
+```
+POST /api/v1/admin/bases        HTTP Basic（ADMIN_USERNAME / ADMIN_PASSWORD）
+multipart/form-data:
+  title         必填，≤ 100 字符
+  th_level      可选，1-100
+  layout_link   可选，http(s) URL
+  source_url    可选，http(s) URL
+  source_site   可选，默认 bilibili
+  image         可选，JPEG / PNG / WebP，≤ 5 MiB
+```
+
+- `layout_link` 与 `image` **至少给一个**，否则 400。
+- 图片类型只看 magic bytes，**不看扩展名、不看 Content-Type**；伪装成 `.png` 的
+  文本会 400。
+- 上传即发布（`is_published=true`），没有审核队列。
+- 同一「标题 + 等级 + 链接 + 来源 URL + 图片字节」再次上传返回 **200 +
+  `duplicated=true`**，不重复写文件。改了标题就会新增一条。
+- 两个环境变量任一为空时，上传接口对任何凭据都返回 401 —— 这是故意的，
+  避免空凭据被 `"" == ""` 放行。
+
+### 排障
+
+```bash
+# 直连 API 传一条测试图（PUBLIC_BASE_URL 不带末尾斜杠）
+curl -s -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
+  -F title=test -F image=@test.jpg \
+  "$PUBLIC_BASE_URL/api/v1/admin/bases"
+
+# 看容器里有没有落盘、权限对不对
+./deploy/compose.sh exec api ls -l /data/media/bases/$(date +%Y/%m)
+
+# 通过 nginx 取图：期望 200 image/jpeg，而不是 200 text/html
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' \
+  "$PUBLIC_BASE_URL/media/bases/$(date +%Y/%m)/<uuid>.jpg"
+```
+
+| 现象 | 原因 | 处置 |
+| --- | --- | --- |
+| 上传 401 | 凭据错，或容器里没设 `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 检查 `.env` 后 `./deploy/compose.sh up -d api` |
+| 上传 413 | 图片超过 5 MiB | 压缩后重传 |
+| 上传 400 | 标题空 / URL 非法 / 不是 JPEG/PNG/WebP | 看响应 `error.message` |
+| 页面图片 404、`/media/...` 返回 `text/html` | `web` 没挂 `media` 卷 | `./deploy/compose.sh up -d web` |
+| 图片 403 | 卷权限 | `chmod -R a+rX /path/to/media` |
+
+### 本地开发
+
+`backend/.env` 加 `MEDIA_ROOT=.media`（相对 `backend/`），Vite 已把 `/media`
+代理到 `127.0.0.1:8000`；不设的话默认 `/data/media` 在 Windows 上不可写，
+上传会 500。批量导入见 `.opencode/skills/coc-base-import/SKILL.md`。

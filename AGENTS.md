@@ -86,3 +86,10 @@ npm run dev       # :5173，/api 已反代到 :8000
   主题变量（`--surface-*` / `--text-*` / `--accent-gold`），**别写死颜色**。
   Element Plus 的深色靠覆盖它的 CSS 变量实现 —— 新加组件时要确认它在深色下
   正常，别只改 body 背景。
+
+- **2026-11-05：阵型页已可浏览 / 上传**。图片在 `media` 卷（本地 `backend/.media`），
+  入库只存 `/media/bases/YYYY/MM/...`；上传接口 `POST /api/v1/admin/bases` 用
+  HTTP Basic（`ADMIN_USERNAME` / `ADMIN_PASSWORD`，任一为空一律 401），**上传即发布**。
+  批量导入走项目 skill `.opencode/skills/coc-base-import/`：B 站 cookie 放
+  `.secrets/bilibili-cookies.txt`（已忽略，绝不入库），图片超 5 MiB 会被 413。
+  改这块前先读 `docs/deployment.md` §15。

@@ -10,8 +10,11 @@
 
 - **查询**：玩家 / 部落档案。
 - **排行榜**：实时榜（全服部落 / 玩家）。
-- **赛季榜 / 阵容 / 阵型（占位）**：赛季榜按最近 3 个快照切换；阵容页展示热门配兵；
-  阵型页本期只是占位。
+- **赛季榜 / 阵容 / 阵型**：赛季榜按最近 3 个快照切换；阵容页展示热门配兵；
+  **阵型页**是 18 本防守阵图集（卡片 + 等级筛选 + 复制官方链接），站长可在页面里
+  上传链接与图片，上传即发布。
+- **阵型图片**：存在 `media` 卷里，库里只存 `/media/bases/YYYY/MM/...` 相对路径；
+  批量导入用项目 skill `.opencode/skills/coc-base-import/`（B 站视频 → 截图 + 置顶链接）。
 - **数据来源**：查询与实时榜来自 Supercell 官方 API；赛季榜与阵容来自 War Report
   （[https://warreport.app](https://warreport.app)）——**署名是使用条件**，见
   `docs/deployment.md` §12。
@@ -43,6 +46,8 @@ C:\pgportable\pgsql\bin\pg_isready.exe -h 127.0.0.1 -p 5433 -U postgres
 # 1) 后端
 cd backend
 Copy-Item .env.example .env        # 填值；COC_API_TOKEN 留空 = 夹具模式（见下）
+# 本地阵型图片目录（相对 backend/；不设则用默认 /data/media，Windows 上写不进去）
+# 在 backend/.env 里加一行：MEDIA_ROOT=.media
 alembic upgrade head               # 建表（首次、或迁移有更新时）
 python -m app.cli seed-dev-rankings # 灌入夹具排行（无 Token 时排行榜才有数据）
 python -m uvicorn app.main:app --reload --port 8000
@@ -54,7 +59,7 @@ npm run dev                        # http://localhost:5173（/api 已反代到 :
 ```
 
 浏览器打开 `http://localhost:5173`，导航有「查询」「排行榜」「阵容」「阵型」四项
-（阵型为占位页；投稿 / 公告 / 后台入口已按设计剥离，后端代码仍在）。
+（阵型页已可浏览与上传；投稿 / 公告 / 后台入口已按设计剥离，后端代码仍在）。
 
 ### 测试与构建
 
