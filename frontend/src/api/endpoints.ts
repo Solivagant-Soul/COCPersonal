@@ -285,3 +285,69 @@ export function getWarReportSeasonRankings(
 export function getArmies(): Promise<Envelope<{ items: ArmyRow[] }>> {
   return request<{ items: ArmyRow[] }>('/api/v1/armies')
 }
+
+/** 一条阵型（基地布局）。链接与图片至少有一个，图片是 `/media/...` 相对 URL。 */
+export interface BaseLayoutItem {
+  id: number
+  title: string
+  thLevel: number | null
+  layoutLink: string | null
+  imagePath: string | null
+  sourceUrl: string | null
+  sourceSite: string | null
+  createdAt: string | null
+}
+
+export interface BasesPage {
+  items: BaseLayoutItem[]
+  total: number
+}
+
+/** 上传表单的输入。`image` 与 `layoutLink` 至少给一个。 */
+export interface UploadBaseInput {
+  title: string
+  thLevel?: number | null
+  layoutLink?: string | null
+  image?: File | null
+  sourceUrl?: string | null
+  sourceSite?: string | null
+}
+
+/** 阵型列表。`thLevel` 为 null 表示不筛等级。 */
+export function getBases(
+  thLevel: number | null = null,
+  page = 1,
+  pageSize = 24,
+): Promise<Envelope<BasesPage>> {
+  const params: Record<string, unknown> = { page, page_size: pageSize }
+  if (thLevel !== null) params.th_level = thLevel
+  return request<BasesPage>('/api/v1/bases', { params })
+}
+
+/**
+ * 管理员上传一条阵型，上传即发布。
+ *
+ * 鉴权是 HTTP Basic，凭据来自环境变量 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，
+ * 由表单里手工填（不写进前端构建产物）。
+ */
+export function uploadBase(
+  input: UploadBaseInput,
+  username: string,
+  password: string,
+): Promise<Envelope<BaseLayoutItem & { duplicated: boolean }>> {
+  const form = new FormData()
+  form.append('title', input.title)
+  if (input.thLevel !== undefined && input.thLevel !== null) {
+    form.append('th_level', String(input.thLevel))
+  }
+  if (input.layoutLink) form.append('layout_link', input.layoutLink)
+  if (input.sourceUrl) form.append('source_url', input.sourceUrl)
+  if (input.sourceSite) form.append('source_site', input.sourceSite)
+  if (input.image) form.append('image', input.image)
+
+  return request<BaseLayoutItem & { duplicated: boolean }>('/api/v1/admin/bases', {
+    method: 'POST',
+    data: form,
+    headers: { Authorization: `Basic ${btoa(`${username}:${password}`)}` },
+  })
+}

@@ -47,6 +47,8 @@ export interface RequestOptions {
   method?: 'GET' | 'POST'
   params?: Record<string, unknown>
   data?: unknown
+  /** 额外的请求头（如上传用的 `Authorization: Basic ...`）。 */
+  headers?: Record<string, string>
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -90,11 +92,11 @@ export async function request<T>(
   path: string,
   opts: RequestOptions = {},
 ): Promise<Envelope<T>> {
-  const { method = 'GET', params, data } = opts
+  const { method = 'GET', params, data, headers } = opts
 
   let response
   try {
-    response = await apiClient.request({ url: path, method, params, data })
+    response = await apiClient.request({ url: path, method, params, data, headers })
   } catch (err) {
     throw toApiError(err)
   }
