@@ -54,3 +54,108 @@ def extract_pinned_texts(payload: dict) -> list[str]:
         if isinstance(message, str):
             texts.append(message)
     return texts
+
+
+# --------------------------------------------------------------------------- #
+# 抓置顶评论（wbi 签名 + 浏览器导出的 cookie）
+# --------------------------------------------------------------------------- #
+
+#: B 站 wbi 签名的固定打乱表（官方前端同款）。
+_MIXIN_KEY_ENC_TAB = [
+    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+    33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61,
+    26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36,
+    20, 34, 44, 52,
+]
+
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def extract_bvid(url: str) -> str:
+    """从任意 B 站视频 URL 里取 BV 号。"""
+    match = re.search(r"(BV[0-9A-Za-z]{10})", url)
+    if not match:
+        raise ValueError(f"URL 里没有 BV 号：{url!r}")
+    return match.group(1)
+
+
+def _mixin_key(img_key: str, sub_key: str) -> str:
+    raw = img_key + sub_key
+    return "".join(raw[index] for index in _MIXIN_KEY_ENC_TAB)[:32]
+
+
+def _signed_params(params: dict[str, object], img_key: str, sub_key: str) -> dict[str, object]:
+    import hashlib
+    import time
+    from urllib.parse import urlencode
+
+    signed = dict(params)
+    signed["wts"] = int(time.time())
+    query = urlencode(sorted(signed.items()))
+    signed["w_rid"] = hashlib.md5((query + _mixin_key(img_key, sub_key)).encode()).hexdigest()
+    return signed
+
+
+def fetch_pinned(bvid: str, cookies_path: Path) -> list[str]:
+    """取视频的置顶评论正文。
+
+    **必须带登录 cookie**：匿名请求评论接口返回 403 / ``-352``。
+    cookie 从浏览器导出为 Netscape 格式，放在 ``.secrets/bilibili-cookies.txt``。
+    """
+    import http.cookiejar
+
+    import requests
+
+    cookies_path = Path(cookies_path)
+    if not cookies_path.is_file():
+        raise FileNotFoundError(
+            f"找不到 B 站 cookie：{cookies_path}（浏览器导出 Netscape 格式后放到这里）"
+        )
+
+    jar = http.cookiejar.MozillaCookieJar(str(cookies_path))
+    jar.load(ignore_discard=True, ignore_expires=True)
+    session = requests.Session()
+    session.cookies.update(jar)
+    session.headers.update({"User-Agent": _UA, "Referer": "https://www.bilibili.com/"})
+
+    view = session.get(
+        "https://api.bilibili.com/x/web-interface/view",
+        params={"bvid": bvid},
+        timeout=15,
+    ).json()
+    if view.get("code") != 0:
+        raise RuntimeError(f"取视频信息失败：{view.get('code')} {view.get('message')}")
+    aid = view["data"]["aid"]
+
+    nav = session.get("https://api.bilibili.com/x/web-interface/nav", timeout=15).json()
+    wbi = nav.get("data", {}).get("wbi_img") or {}
+    img_url = wbi.get("img_url", "")
+    sub_url = wbi.get("sub_url", "")
+    if not img_url or not sub_url:
+        raise RuntimeError("取 wbi 签名密钥失败（cookie 可能已失效）")
+    img_key = img_url.rsplit("/", 1)[-1].split(".")[0]
+    sub_key = sub_url.rsplit("/", 1)[-1].split(".")[0]
+
+    params = _signed_params(
+        {
+            "oid": aid,
+            "type": 1,
+            "mode": 3,
+            "pagination_str": '{"offset":""}',
+            "plat": 1,
+            "web_location": 1315875,
+        },
+        img_key,
+        sub_key,
+    )
+    reply = session.get(
+        "https://api.bilibili.com/x/v2/reply/wbi/main",
+        params=params,
+        timeout=15,
+    ).json()
+    if reply.get("code") != 0:
+        raise RuntimeError(f"取评论失败：{reply.get('code')} {reply.get('message')}")
+    return extract_pinned_texts(reply)
