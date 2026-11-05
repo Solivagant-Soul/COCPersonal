@@ -651,7 +651,8 @@ docker compose exec api alembic upgrade head
 
 赛季榜与阵容页的数据来自第三方 **[War Report](https://warreport.app)**（只读 API
 `https://api.warreport.app`）。它与 Supercell 官方链路**完全独立**：不需要 API Key、
-没有 IP 白名单、不占令牌桶，默认配置就能跑。「阵型」页本期只是占位，没有数据源。
+没有 IP 白名单、不占令牌桶，默认配置就能跑。「阵型」页的数据与它无关 ——
+阵型由站长上传（见 §15），批量导入走 B 站视频的本地 skill。
 
 ### 12.1 端点与调度
 
@@ -919,3 +920,15 @@ curl -s -o /dev/null -w '%{http_code} %{content_type}\n' \
 图片要重启后才可访问）。Vite 已把 `/media` 代理到 `127.0.0.1:8000`；不设的话默认
 `/data/media` 在 Windows 上不可写，上传会 500。批量导入见
 `.opencode/skills/coc-base-import/SKILL.md`。
+
+**批量导入首次真跑（2026-11-05，BV1qHpY62EoT 的 30 个 18 本阵型）暴露的坑**
+（都已修进 skill，重跑别的视频不会再踩）：
+
+- 置顶评论正文被折叠，真正的链接在它挂的**专栏**（`note_cvid`）里，格式是
+  「编号一行、完整链接一行」；评论区只给截断成 80 字符的预览。
+- 预览里的 `https://li...` 半截 URL 曾把「第 1 号」占掉并让脚本跳过专栏 ——
+  解析器现在只认 `link.clashofclans.com`。
+- 抽帧要取**每段中点**（0.5），取 0.2 会拍到换阵转场，整条数据错位一格。
+- `yt-dlp` 要用 `bv*`：B 站匿名只给 DASH 纯视频轨，`b[height<=720]` 会直接失败。
+- `x/article/view` 匿名限流很紧（`-352` / `-509`），脚本退避重试并把成功响应缓存到
+  `{workdir}/links.cache/cv<id>.json`。

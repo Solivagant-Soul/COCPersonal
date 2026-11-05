@@ -218,17 +218,19 @@
 
 - 脚本只依赖 `yt-dlp`、`imageio-ffmpeg`（自带 ffmpeg 二进制）、`requests`；
   用后端同一套 Python 环境安装：`python -m pip install yt-dlp imageio-ffmpeg requests`
-- cookie 路径固定 `.secrets/bilibili-cookies.txt`，`.secrets/` 与 `backend/.media/` 加入 `.gitignore`
+- cookie 路径固定 `.secrets/bilibili-cookies.txt`，`.secrets/` 与 `backend/.media/` 加入 `.gitignore`；
+  **cookie 可选**（公开视频的置顶评论与专栏匿名可读，2026-11 实测）
 
 ### 6.2 流程
 
-1. **下载**：`yt-dlp -f "bv*[height<=720]"` 下到临时目录
+1. **下载**：`yt-dlp -f "bv*[height<=480][ext=mp4]/bv*[height<=720]..."` 下到临时目录
+   （B 站匿名只给 DASH 纯视频轨，没有音视频合一的 `b`）
 2. **抽帧**：`ffprobe` 取时长 `D`，按 `N = --count`（默认 30）计算 `interval = D / N`，
-   在第 `i` 帧的 `i*interval + 0.2*interval` 处取图；输出 `01.jpg`–`30.jpg`（JPEG q=3）
+   在第 `i` 帧的 `i*interval + 0.5*interval`（**段中点**）处取图；输出 `01.jpg`–`30.jpg`（JPEG q=3）
 3. **解析链接**：
-   - 用 cookie 调 `x/v2/reply/wbi/main`（脚本内实现 wbi 签名）
-   - 优先取置顶评论；评论里若是 `bilibili.com/opus/...` 笔记链接，再抓笔记正文
-   - 按 `1号: TH18:WB:...` / `#19：TH18:HV:...` 解析出 `编号 → 链接`
+   - 用 cookie 调 `x/v2/reply/wbi/main`（脚本内实现 wbi 签名），失败退回匿名的 `x/v2/reply`
+   - 优先取置顶评论；置顶被折叠成专栏（`note_cvid`）或 `bilibili.com/opus/...` 笔记时跟进抓正文
+   - 按 `1号: TH18:WB:...` / `#19：TH18:HV:...` / `1:` 换行完整链接 解析出 `编号 → 链接`（只认 `link.clashofclans.com`）
    - 简写码补全为 `https://link.clashofclans.com/?action=OpenLayout&id=<urlencode(code)>`
    - 解析失败或缺号：写 `links.raw.txt` 并以非零码退出，提示用 `--links links.json` 手工补
 4. **上传**：逐条 multipart 调 `POST /api/v1/admin/bases`；
