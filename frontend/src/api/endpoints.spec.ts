@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./request', () => ({ request: vi.fn() }))
 
@@ -6,21 +6,21 @@ import { request } from './request'
 import {
   getArmies,
   getBases,
-  uploadBase,
   getWarReportSeasonRankings,
   getWarReportSeasons,
+  uploadBase,
 } from './endpoints'
 
-describe('War Report 鎺ュ彛灏佽', () => {
+describe('War Report 接口封装', () => {
   beforeEach(() => vi.mocked(request).mockReset())
 
-  it('璧涘鍒楄〃璧?warreport/seasons', async () => {
+  it('赛季列表走 warreport/seasons', async () => {
     vi.mocked(request).mockResolvedValue({ data: { items: [] }, meta: {} } as never)
     await getWarReportSeasons()
     expect(request).toHaveBeenCalledWith('/api/v1/rankings/warreport/seasons')
   })
 
-  it('璧涘姒滅敤铔囧舰 page_size锛屽苟鎶?kind 鏀捐繘璺緞', async () => {
+  it('赛季榜用蛇形 page_size，并把 kind 放进路径', async () => {
     vi.mocked(request).mockResolvedValue({ data: {}, meta: {} } as never)
     await getWarReportSeasonRankings('2026-10-05', 'players', 2, 50)
     expect(request).toHaveBeenCalledWith(
@@ -29,17 +29,17 @@ describe('War Report 鎺ュ彛灏佽', () => {
     )
   })
 
-  it('闃靛鎺ュ彛鍥哄畾 /api/v1/armies', async () => {
+  it('阵容接口固定 /api/v1/armies', async () => {
     vi.mocked(request).mockResolvedValue({ data: { items: [] }, meta: {} } as never)
     await getArmies()
     expect(request).toHaveBeenCalledWith('/api/v1/armies')
   })
 })
 
-describe('闃靛瀷鎺ュ彛灏佽', () => {
+describe('阵型接口封装', () => {
   beforeEach(() => vi.mocked(request).mockReset())
 
-  it('闃靛瀷鍒楄〃鍥哄畾 /api/v1/bases锛屽弬鏁?snake_case', async () => {
+  it('阵型列表固定 /api/v1/bases，参数 snake_case', async () => {
     vi.mocked(request).mockResolvedValue({ data: { items: [], total: 0 }, meta: {} } as never)
     await getBases(18)
     expect(request).toHaveBeenCalledWith('/api/v1/bases', {
@@ -47,7 +47,7 @@ describe('闃靛瀷鎺ュ彛灏佽', () => {
     })
   })
 
-  it('涓嶄紶绛夌骇鏃朵笉甯?th_level', async () => {
+  it('不传等级时不带 th_level', async () => {
     vi.mocked(request).mockResolvedValue({ data: { items: [], total: 0 }, meta: {} } as never)
     await getBases()
     expect(request).toHaveBeenCalledWith('/api/v1/bases', {
@@ -55,7 +55,7 @@ describe('闃靛瀷鎺ュ彛灏佽', () => {
     })
   })
 
-  it('闃靛瀷涓婁紶甯?Basic 澶翠笌 multipart', async () => {
+  it('阵型上传带 Basic 头与 multipart', async () => {
     vi.mocked(request).mockResolvedValue({
       data: { id: 1, duplicated: false },
       meta: {},
@@ -73,5 +73,17 @@ describe('闃靛瀷鎺ュ彛灏佽', () => {
     expect(form.get('title')).toBe('x')
     expect(form.get('layout_link')).toBe('https://e.com')
     expect(form.get('image')).toBe(file)
+  })
+
+  it('非 ASCII 凭据按 UTF-8 编码再 base64（btoa 只吃 Latin-1）', async () => {
+    vi.mocked(request).mockResolvedValue({ data: { id: 1 }, meta: {} } as never)
+
+    await uploadBase({ title: 'x', layoutLink: 'https://e.com' }, '站长', '口令123')
+
+    const [, opts] = vi.mocked(request).mock.calls[0]
+    const header = opts!.headers!.Authorization
+    const decoded = atob(header.replace(/^Basic /, ''))
+    const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0))
+    expect(new TextDecoder().decode(bytes)).toBe('站长:口令123')
   })
 })

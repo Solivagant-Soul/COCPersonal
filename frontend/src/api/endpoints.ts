@@ -348,6 +348,20 @@ export function uploadBase(
   return request<BaseLayoutItem & { duplicated: boolean }>('/api/v1/admin/bases', {
     method: 'POST',
     data: form,
-    headers: { Authorization: `Basic ${btoa(`${username}:${password}`)}` },
+    headers: { Authorization: basicAuthHeader(username, password) },
   })
+}
+
+/**
+ * `Authorization: Basic ...`，凭据按 **UTF-8** 编码。
+ *
+ * 直接 `btoa('用户:口令')` 遇到非 Latin-1 字符会抛 `InvalidCharacterError`，
+ * 中文账号/口令就传不上去。先转 UTF-8 字节，再逐字节拼成 Latin-1 字符串 ——
+ * 这正是 HTTP Basic 要求的字节序列。
+ */
+export function basicAuthHeader(username: string, password: string): string {
+  const bytes = new TextEncoder().encode(`${username}:${password}`)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return `Basic ${btoa(binary)}`
 }
