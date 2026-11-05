@@ -31,6 +31,17 @@ cookie 过期后表现是评论接口返回 `-101` / `-352`；重新导出即可
 - 值可以是分享码（脚本自动补官方 URL 并做 URL 编码），也可以是完整链接。
 - 命令里加 `--links links.json`，此时不再抓评论（可以先离线工作）。
 
+不想动 cookie 也行：把置顶评论/笔记正文原样存成 `.secrets/pinned-note.txt`
+（这个文件名只是习惯，`--comments-file` 收任意路径），然后：
+
+```bash
+python .opencode/skills/coc-base-import/scripts/pipeline.py \
+  --video-url "https://www.bilibili.com/video/BV1qHpY62EoT/" \
+  --count 30 --th-level 18 --comments-file .secrets/pinned-note.txt --dry-run
+```
+
+解析规则与线上抓取完全一致（编号缺了照样非零退出）。
+
 ## 编号对不上：`--mapping`
 
 抽帧是按「总时长 ÷ 数量」等分的，若视频中间有片头/片尾或某个阵型多停了几秒，

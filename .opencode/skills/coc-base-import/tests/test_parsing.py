@@ -160,6 +160,20 @@ def test_load_links_parses_note_body(tmp_path, monkeypatch):
     assert links[1] == BASE + "TH18%3AWB%3AAAAARAAAAAAphHQWN6eIhzQedsGoEvXp"
 
 
+def test_load_links_reads_comments_file_without_cookies(tmp_path):
+    """没有 cookie 时，把置顶正文存成本地文本也能跑（离线兜底）。"""
+    note = tmp_path / "note.txt"
+    note.write_text(f"1号：{CODE}", encoding="utf-8")
+
+    links, raw_text, from_file = pipeline.load_links(
+        None, "不存在的 cookie.txt", "BV1qHpY62EoT", str(note)
+    )
+
+    assert from_file is False
+    assert links[1] == BASE + "TH18%3AWB%3AAAAARAAAAAAphHQWN6eIhzQedsGoEvXp"
+    assert raw_text == f"1号：{CODE}"
+
+
 def _argv(tmp_path: Path) -> list[str]:
     return [
         "--video-url",

@@ -120,15 +120,19 @@ def extract_frames(video: Path, timestamps: list[float], frames_dir: Path) -> li
 
 
 def load_links(
-    links_path: str | None, cookies: str, bvid: str
+    links_path: str | None,
+    cookies: str,
+    bvid: str,
+    comments_file: str | None = None,
 ) -> tuple[dict[int, str], str, bool]:
     """解析 ``编号 → 链接``。
 
     返回 ``(links, raw_text, from_file)``：
 
     - ``links_path`` 给了 ``--links`` 就直接用（``from_file=True``，人工清单可信）；
+    - ``comments_file`` 给了 ``--comments-file`` 就当作置顶评论正文（无需 cookie）；
     - 否则抓置顶评论，评论里只给了 ``bilibili.com/opus/...`` 笔记链接时**再抓笔记正文**；
-    - ``raw_text`` 是抓到的全部原始文本（+ 笔记 JSON），解析失败时由调用方落盘，
+    - ``raw_text`` 是拿到的全部原始文本（+ 笔记 JSON），解析失败时由调用方落盘，
       供人工看图/手工补 ``links.json``。
     """
     if links_path:
@@ -142,7 +146,11 @@ def load_links(
             True,
         )
 
-    texts = bili_links.fetch_pinned(bvid, Path(cookies))
+    if comments_file:
+        texts = [Path(comments_file).read_text(encoding="utf-8")]
+    else:
+        texts = bili_links.fetch_pinned(bvid, Path(cookies))
+
     raw_parts = list(texts)
     links: dict[int, str] = {}
     for text in texts:
@@ -229,6 +237,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--links", help="手工链接 JSON：{编号: 分享码或完整 URL}")
     parser.add_argument(
+        "--comments-file",
+        help="把置顶评论/笔记正文存成本地文本文件，直接解析（不需要 cookie）",
+    )
+    parser.add_argument(
         "--mapping",
         help="抽帧编号 → 链接编号的修正 JSON，如 {\"1\": 3, \"2\": 1}",
     )
@@ -261,7 +273,9 @@ def main(argv: list[str] | None = None) -> int:
     bvid = bili_links.extract_bvid(args.video_url)
     workdir = Path(args.workdir)
 
-    links, raw_text, from_file = load_links(args.links, args.cookies, bvid)
+    links, raw_text, from_file = load_links(
+        args.links, args.cookies, bvid, args.comments_file
+    )
     if not links:
         print("没有解析到任何阵型链接：置顶笔记可能是图片，或 cookie 失效。", file=sys.stderr)
         if not from_file:
