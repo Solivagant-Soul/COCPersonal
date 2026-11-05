@@ -102,6 +102,7 @@ const PAGE_SIZE = 24
 /** 0 = 全部。不用 `null` 当单选值：Element Plus 的 value prop 不声明 null。 */
 const LEVEL_OPTIONS = [
   { label: '全部', value: 0 },
+  { label: '16 本', value: 16 },
   { label: '17 本', value: 17 },
   { label: '18 本', value: 18 },
 ] as const
@@ -130,8 +131,14 @@ async function load(append = false) {
     items.value = append ? [...items.value, ...res.data.items] : res.data.items
     total.value = res.data.total
   } catch (err) {
-    if (append) page.value -= 1
-    error.value = toApiError(err)
+    const apiError = toApiError(err)
+    if (append) {
+      // 加载更多失败只回退页码，**不能把已加载的卡片换成整页错误**。
+      page.value -= 1
+      ElMessage.error(apiError.message || '加载更多失败')
+    } else {
+      error.value = apiError
+    }
   } finally {
     loading.value = false
   }
