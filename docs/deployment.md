@@ -936,3 +936,85 @@ curl -s -o /dev/null -w '%{http_code} %{content_type}\n' \
   就会顶到边界（真跑第二轮出现过「重复 22、失败 8」，全是 429）。
 - `x/article/view` 匿名限流很紧（`-352` / `-509`），脚本退避重试并把成功响应缓存到
   `{workdir}/links.cache/cv<id>.json`。
+
+### 迁移到新服务器（阵型素材怎么过去）
+
+阵型素材是**两样东西**，表现出的故障完全不同：
+
+| 素材 | 存在哪 | 少了它 |
+| --- | --- | --- |
+| 30 张 JPEG | `media` 命名卷（容器内 `/data/media`） | 列表有 30 条，**所有图裂** |
+| 30 行 `base_layouts` | `pgdata` 卷 | 图在服务器上，**站点一条都不显示** |
+
+只搬一半等于没搬。另外 `./deploy/compose.sh sync-assets` 补的是
+`frontend/public/pictures/` 的 Fankit 图标，**与阵型无关**，别拿它当迁移手段。
+
+#### 路径 A（推荐）：不搬文件，对着线上重跑一次导入
+
+图片与库行都从上传接口进去；库里存的是相对 URL（`/media/bases/YYYY/MM/...`），
+换域名不用改数据。
+
+```bash
+# 1. 服务器：.env 配好 ADMIN_USERNAME / ADMIN_PASSWORD 后
+cd /opt/cocpersonal/COCPersonal
+./deploy/compose.sh up -d          # 改了 .env 必须 up -d，restart 不重读
+docker compose exec api alembic upgrade head   # 新库别漏，否则上传会 500
+
+# 2. 开发机（抓取在本地做，只把结果推给线上；服务器不需要能访问 B 站）
+python .opencode/skills/coc-base-import/scripts/pipeline.py \
+  --video-url "https://www.bilibili.com/video/BV1qHpY62EoT/" \
+  --count 30 --th-level 18 \
+  --workdir .cache/coc-base-import \
+  --api-base https://<线上域名> --user <管理员> --password <口令>
+```
+
+PowerShell 下把 `\` 续行去掉拼成一行。验证与幂等：
+
+```bash
+curl -s "$PUBLIC_BASE_URL/api/v1/bases?page_size=50" | grep -o '"total":[0-9]*'   # 30
+# 再跑一遍同一条 pipeline 命令，期望「重复 30 / 失败 0」
+```
+
+限流是 60 次/分钟/IP，30 条会贴着边界走（脚本已对 429 退避，**别手动并发**）。
+
+#### 路径 B：离线搬运（要冻结当前这份数据时）
+
+本质是手工做一次 `backend/deploy/backup.sh` 的逆操作。
+
+```bash
+# ① 开发机打包图片（Windows 自带 tar 也行）
+tar -czf bases-media.tgz -C backend/.media bases
+scp bases-media.tgz root@1.2.3.4:/tmp/
+
+# ② 服务器解进 media 卷（默认卷名 cocpersonal_media，改过项目名就换 <项目名>_media）
+docker run --rm -v cocpersonal_media:/data -v /tmp:/backup:ro alpine \
+  sh -c 'tar -xzf /backup/bases-media.tgz -C /data && find /data/bases -type f | wc -l'
+# 期望最后一行 30。包里第一层就是 bases/，-C /data 正好对齐 nginx 的 alias /data/media/
+```
+
+```bash
+# ③ 开发机只导这一张表的数据（本机 PG 在 5433，无密码）
+"C:/pgportable/pgsql/bin/pg_dump.exe" -h 127.0.0.1 -p 5433 -U postgres -d postgres \
+  --data-only --table=base_layouts --column-inserts --no-owner -f base_layouts.sql
+scp base_layouts.sql root@1.2.3.4:/tmp/
+
+# ④ 服务器导入（-U/-d 跟 .env 的 POSTGRES_USER / POSTGRES_DB 走）
+cd /opt/cocpersonal/COCPersonal
+docker compose exec -T postgres psql -U coc -d coc -v ON_ERROR_STOP=1 < /tmp/base_layouts.sql
+# ★ 必须补序列，否则下次上传主键冲突
+docker compose exec -T postgres psql -U coc -d coc \
+  -c "SELECT setval('base_layouts_id_seq', COALESCE((SELECT max(id) FROM base_layouts), 1));"
+```
+
+- 目标库**已有**阵型行时这批 `INSERT` 会撞主键 —— 别去修 SQL，直接用路径 A（重复即跳过）。
+- 只碰 `base_layouts`，排行榜 / 赛季 / 阵容数据不动。
+- 从 `backup.sh` 的 `media-*.tar.gz` 恢复走同一句 `docker run ... tar -xzf`（包内同样以 `bases/` 起）。
+
+验证（与 §15 排障同一标准）：
+
+```bash
+curl -s "$PUBLIC_BASE_URL/api/v1/bases?page_size=50" | grep -o '"total":[0-9]*'
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' \
+  "$PUBLIC_BASE_URL/media/bases/2026/11/<uuid>.jpg"
+# 必须 200 image/jpeg；200 text/html = web 没挂上 media 卷，./deploy/compose.sh up -d web
+```
