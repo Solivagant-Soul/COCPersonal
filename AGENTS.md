@@ -91,5 +91,8 @@ npm run dev       # :5173，/api 与 /media 已反代到 :8000
   入库只存 `/media/bases/YYYY/MM/...`；上传接口 `POST /api/v1/admin/bases` 用
   HTTP Basic（`ADMIN_USERNAME` / `ADMIN_PASSWORD`，任一为空一律 401），**上传即发布**。
   批量导入走项目 skill `.opencode/skills/coc-base-import/`：B 站 cookie 放
-  `.secrets/bilibili-cookies.txt`（已忽略，绝不入库），图片超 5 MiB 会被 413。
-  改这块前先读 `docs/deployment.md` §15。
+  `.secrets/bilibili-cookies.txt`（已忽略，绝不入库，**可选**——置顶评论与专栏匿名可读），
+  图片超 5 MiB 会被 413。改这块前先读 `docs/deployment.md` §15。
+  **已完成首次真实导入**（`BV1qHpY62EoT` 的 30 个 18 本阵型 → 本机库 30 条，重跑全为「重复」）；
+  途中踩到的四个坑（置顶链接其实在 `note_cvid` 专栏里、解析只认 `link.clashofclans.com`、
+  抽帧必须取段中点、`yt-dlp` 要用 `bv*`）已修进 skill，别再改回去。
