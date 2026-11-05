@@ -1,8 +1,14 @@
 from pathlib import Path
 
 import pipeline
-from bili_links import extract_pinned_texts, normalize_layout_link, parse_layout_codes
-from pipeline import frame_timestamps
+from bili_links import (
+    _collect_texts,
+    extract_opus_ids,
+    extract_pinned_texts,
+    normalize_layout_link,
+    parse_layout_codes,
+)
+from pipeline import frame_timestamps, missing_numbers
 
 CODE = "TH18:WB:AAAARAAAAAAphHQWN6eIhzQedsGoEvXp"
 BASE = "https://link.clashofclans.com/?action=OpenLayout&id="
@@ -82,3 +88,106 @@ def test_download_video_reuses_same_video_cache(tmp_path, monkeypatch):
         "https://www.bilibili.com/video/BV1qHpY62EoT/", tmp_path
     )
     assert video.read_bytes() == b"cached"
+
+
+def test_extract_opus_ids_dedupes_and_keeps_order():
+    texts = [
+        "链接在 https://www.bilibili.com/opus/111 里",
+        "再贴一次 https://www.bilibili.com/opus/111",
+        "备用 https://bilibili.com/opus/222?share=1",
+    ]
+    assert extract_opus_ids(texts) == ["111", "222"]
+
+
+def test_collect_texts_walks_nested_rich_text_nodes():
+    payload = {
+        "item": {
+            "modules": {
+                "module_dynamic": {
+                    "desc": {"text": "总览", "rich_text_nodes": [{"text": "1号：TH18:WB:AAA"}]},
+                    "major": {"opus": {"title": "18本阵型", "summary": {"text": "第二段"}}},
+                }
+            }
+        }
+    }
+    texts = _collect_texts(payload)
+    assert "1号：TH18:WB:AAA" in texts
+    assert "18本阵型" in texts
+    assert "第二段" in texts
+
+
+def test_missing_numbers_honours_mapping():
+    links = {1: "a", 3: "c"}
+    assert missing_numbers(links, 3, {}) == [2]
+    # 第 2 个抽帧映射到链接 3 后，就不缺号了
+    assert missing_numbers(links, 3, {2: 3}) == []
+
+
+def test_load_links_dumps_raw_when_notes_are_images(tmp_path, monkeypatch):
+    """置顶是图片笔记（没有正文）时，原始响应要落盘供人工看图。"""
+    monkeypatch.setattr(
+        pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: ["看笔记 https://www.bilibili.com/opus/42"]
+    )
+    monkeypatch.setattr(
+        pipeline.bili_links,
+        "fetch_opus",
+        lambda opus_id, cookies: {"texts": [], "raw": {"pics": ["https://i0.hdslb.com/a.jpg"]}},
+    )
+
+    links, raw_text, from_file = pipeline.load_links(None, "cookies.txt", "BV1qHpY62EoT")
+
+    assert links == {}
+    assert from_file is False
+    target = pipeline.write_raw(tmp_path, raw_text)
+    body = target.read_text(encoding="utf-8")
+    assert "opus/42" in body
+    assert "a.jpg" in body
+
+
+def test_load_links_parses_note_body(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: ["https://www.bilibili.com/opus/7"]
+    )
+    monkeypatch.setattr(
+        pipeline.bili_links,
+        "fetch_opus",
+        lambda opus_id, cookies: {"texts": [f"1号：{CODE}"], "raw": {}},
+    )
+
+    links, _, from_file = pipeline.load_links(None, "cookies.txt", "BV1qHpY62EoT")
+
+    assert from_file is False
+    assert links[1] == BASE + "TH18%3AWB%3AAAAARAAAAAAphHQWN6eIhzQedsGoEvXp"
+
+
+def _argv(tmp_path: Path) -> list[str]:
+    return [
+        "--video-url",
+        "https://www.bilibili.com/video/BV1qHpY62EoT/",
+        "--count",
+        "2",
+        "--workdir",
+        str(tmp_path),
+        "--dry-run",
+    ]
+
+
+def test_main_stops_and_dumps_raw_when_nothing_parsed(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: ["好阵型"])
+
+    rc = pipeline.main(_argv(tmp_path))
+
+    assert rc == 1
+    assert (tmp_path / "links.raw.txt").read_text(encoding="utf-8").strip() == "好阵型"
+
+
+def test_main_stops_when_numbers_are_missing(tmp_path, monkeypatch):
+    """缺号直接停：半套数据传上去再补，比现在停下来更麻烦。"""
+    monkeypatch.setattr(
+        pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: [f"1号：{CODE}"]
+    )
+
+    rc = pipeline.main(_argv(tmp_path))
+
+    assert rc == 1
+    assert (tmp_path / "links.raw.txt").is_file()

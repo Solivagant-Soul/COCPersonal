@@ -20,6 +20,12 @@ _CODE_RE = re.compile(
     r"(TH\d{1,2}:[A-Z]{2}:[A-Za-z0-9_-]+)"
 )
 
+#: 置顶评论里指向笔记（opus）的链接。
+_OPUS_RE = re.compile(r"https?://(?:www\.)?bilibili\.com/opus/(\d+)")
+
+#: 从笔记 JSON 里收集正文时认的键名。
+_TEXT_KEYS = frozenset({"text", "orig_text", "title"})
+
 
 def normalize_layout_link(code: str) -> str:
     """分享码 → 官方链接；已经是 http(s) URL 就原样返回。"""
@@ -99,12 +105,38 @@ def _signed_params(params: dict[str, object], img_key: str, sub_key: str) -> dic
     return signed
 
 
-def fetch_pinned(bvid: str, cookies_path: Path) -> list[str]:
-    """取视频的置顶评论正文。
+def extract_opus_ids(texts: list[str]) -> list[str]:
+    """从评论文本里取 ``bilibili.com/opus/<id>`` 的笔记 id（去重、保序）。"""
+    ids: list[str] = []
+    for text in texts:
+        for match in _OPUS_RE.finditer(text):
+            if match.group(1) not in ids:
+                ids.append(match.group(1))
+    return ids
 
-    **必须带登录 cookie**：匿名请求评论接口返回 403 / ``-352``。
-    cookie 从浏览器导出为 Netscape 格式，放在 ``.secrets/bilibili-cookies.txt``。
+
+def _collect_texts(node: object) -> list[str]:
+    """从任意 JSON 里收集所有正文片段。
+
+    动态/笔记的正文既可能在 ``desc.text``，也可能拆在 ``rich_text_nodes[].text``，
+    不同版本还换过字段名，所以按「键名是 text/title 就收」泛化处理；多收几条
+    无关键名也不要紧 —— 后面只按编号正则匹配。
     """
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _TEXT_KEYS and isinstance(value, str):
+                found.append(value)
+            else:
+                found.extend(_collect_texts(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_collect_texts(value))
+    return found
+
+
+def _session_from_cookies(cookies_path: Path):
+    """按 Netscape cookie 文件建一个带 UA / Referer 的 requests 会话。"""
     import http.cookiejar
 
     import requests
@@ -120,6 +152,30 @@ def fetch_pinned(bvid: str, cookies_path: Path) -> list[str]:
     session = requests.Session()
     session.cookies.update(jar)
     session.headers.update({"User-Agent": _UA, "Referer": "https://www.bilibili.com/"})
+    return session
+
+
+def _wbi_keys(session) -> tuple[str, str]:
+    """取 wbi 签名用的 img_key / sub_key（每次请求现取，密钥会轮换）。"""
+    nav = session.get("https://api.bilibili.com/x/web-interface/nav", timeout=15).json()
+    wbi = nav.get("data", {}).get("wbi_img") or {}
+    img_url = wbi.get("img_url", "")
+    sub_url = wbi.get("sub_url", "")
+    if not img_url or not sub_url:
+        raise RuntimeError("取 wbi 签名密钥失败（cookie 可能已失效）")
+    return (
+        img_url.rsplit("/", 1)[-1].split(".")[0],
+        sub_url.rsplit("/", 1)[-1].split(".")[0],
+    )
+
+
+def fetch_pinned(bvid: str, cookies_path: Path) -> list[str]:
+    """取视频的置顶评论正文。
+
+    **必须带登录 cookie**：匿名请求评论接口返回 403 / ``-352``。
+    cookie 从浏览器导出为 Netscape 格式，放在 ``.secrets/bilibili-cookies.txt``。
+    """
+    session = _session_from_cookies(cookies_path)
 
     view = session.get(
         "https://api.bilibili.com/x/web-interface/view",
@@ -130,15 +186,7 @@ def fetch_pinned(bvid: str, cookies_path: Path) -> list[str]:
         raise RuntimeError(f"取视频信息失败：{view.get('code')} {view.get('message')}")
     aid = view["data"]["aid"]
 
-    nav = session.get("https://api.bilibili.com/x/web-interface/nav", timeout=15).json()
-    wbi = nav.get("data", {}).get("wbi_img") or {}
-    img_url = wbi.get("img_url", "")
-    sub_url = wbi.get("sub_url", "")
-    if not img_url or not sub_url:
-        raise RuntimeError("取 wbi 签名密钥失败（cookie 可能已失效）")
-    img_key = img_url.rsplit("/", 1)[-1].split(".")[0]
-    sub_key = sub_url.rsplit("/", 1)[-1].split(".")[0]
-
+    img_key, sub_key = _wbi_keys(session)
     params = _signed_params(
         {
             "oid": aid,
@@ -159,3 +207,33 @@ def fetch_pinned(bvid: str, cookies_path: Path) -> list[str]:
     if reply.get("code") != 0:
         raise RuntimeError(f"取评论失败：{reply.get('code')} {reply.get('message')}")
     return extract_pinned_texts(reply)
+
+
+def fetch_opus(opus_id: str, cookies_path: Path) -> dict[str, object]:
+    """抓一条 ``/opus/<id>`` 笔记的正文。
+
+    返回 ``{"texts": [...], "raw": <原始响应>}``。``texts`` 为空说明正文是图片
+    （UP 常把阵型代码贴在长图里），调用方应把 ``raw`` 落盘让人工看图。
+    """
+    session = _session_from_cookies(cookies_path)
+    img_key, sub_key = _wbi_keys(session)
+    params = _signed_params(
+        {
+            "id": opus_id,
+            "timezone_offset": -480,
+            "platform": "web",
+            "features": "itemOpusStyle",
+        },
+        img_key,
+        sub_key,
+    )
+    payload = session.get(
+        "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail",
+        params=params,
+        timeout=15,
+    ).json()
+    if payload.get("code") != 0:
+        raise RuntimeError(
+            f"取笔记 {opus_id} 失败：{payload.get('code')} {payload.get('message')}"
+        )
+    return {"texts": _collect_texts(payload.get("data")), "raw": payload}

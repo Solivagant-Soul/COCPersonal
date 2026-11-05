@@ -34,8 +34,11 @@ python .opencode/skills/coc-base-import/scripts/pipeline.py \
 
 - 链接编号与画面上 `#N` 角标是否一一对应；对不上时用 `--mapping`（见
   `references/workflow.md`）。
-- 缺链接的行会标「（缺链接）」。置顶笔记是图片时，按 workflow 手工建
-  `links.json` 后加 `--links links.json` 重跑 dry-run。
+- 置顶评论若是 `bilibili.com/opus/...` 笔记链接，脚本会自动跟进抓正文（图片笔记
+  抓不到文字）。
+- **解析失败或缺号会直接退出（非 0）**，并把抓到的原始文本存成
+  `{workdir}/links.raw.txt`。此时按 workflow 手工建 `links.json`，
+  加 `--links links.json` 重跑 dry-run —— 脚本不会带着半套链接上传。
 
 把这张表给用户看过、确认无误后再进入下一步。
 

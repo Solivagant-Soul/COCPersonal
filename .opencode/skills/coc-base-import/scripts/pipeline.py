@@ -119,20 +119,58 @@ def extract_frames(video: Path, timestamps: list[float], frames_dir: Path) -> li
     return frames
 
 
-def load_links(args: argparse.Namespace, bvid: str) -> dict[int, str]:
-    """链接来源：``--links`` 优先，否则抓置顶评论再解析。"""
-    if args.links:
-        raw = json.loads(Path(args.links).read_text(encoding="utf-8"))
-        return {
-            int(number): bili_links.normalize_layout_link(str(code))
-            for number, code in raw.items()
-        }
+def load_links(
+    links_path: str | None, cookies: str, bvid: str
+) -> tuple[dict[int, str], str, bool]:
+    """解析 ``编号 → 链接``。
 
-    texts = bili_links.fetch_pinned(bvid, Path(args.cookies))
+    返回 ``(links, raw_text, from_file)``：
+
+    - ``links_path`` 给了 ``--links`` 就直接用（``from_file=True``，人工清单可信）；
+    - 否则抓置顶评论，评论里只给了 ``bilibili.com/opus/...`` 笔记链接时**再抓笔记正文**；
+    - ``raw_text`` 是抓到的全部原始文本（+ 笔记 JSON），解析失败时由调用方落盘，
+      供人工看图/手工补 ``links.json``。
+    """
+    if links_path:
+        raw = json.loads(Path(links_path).read_text(encoding="utf-8"))
+        return (
+            {
+                int(number): bili_links.normalize_layout_link(str(code))
+                for number, code in raw.items()
+            },
+            "",
+            True,
+        )
+
+    texts = bili_links.fetch_pinned(bvid, Path(cookies))
+    raw_parts = list(texts)
     links: dict[int, str] = {}
     for text in texts:
         links.update(bili_links.parse_layout_codes(text))
-    return links
+
+    # 置顶只贴了笔记链接（UP 常用「链接在笔记里」）：跟进抓正文。
+    for opus_id in bili_links.extract_opus_ids(texts) if not links else []:
+        note = bili_links.fetch_opus(opus_id, Path(cookies))
+        raw_parts.append(json.dumps(note["raw"], ensure_ascii=False, indent=2))
+        for text in note["texts"]:
+            links.update(bili_links.parse_layout_codes(text))
+
+    return links, "\n\n---\n\n".join(raw_parts), False
+
+
+def missing_numbers(links: dict[int, str], count: int, mapping: dict[int, int]) -> list[int]:
+    """抽帧需要的链接编号里，哪些没解析到。"""
+    required = {mapping.get(index, index) for index in range(1, count + 1)}
+    return sorted(required - set(links))
+
+
+def write_raw(workdir: Path, raw_text: str) -> Path:
+    """把抓到的原始文本落盘，方便人工看图补 ``links.json``。"""
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    target = workdir / "links.raw.txt"
+    target.write_text(raw_text or "（没有抓到任何文本）", encoding="utf-8")
+    return target
 
 
 def load_mapping(path: str | None) -> dict[int, int]:
@@ -182,6 +220,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--count", type=int, default=30, help="视频里的阵型数量（默认 30）")
     parser.add_argument("--th-level", type=int, default=18, help="大本等级（默认 18）")
     parser.add_argument(
+        "--source-site", default="bilibili", help="来源站点名（默认 bilibili）"
+    )
+    parser.add_argument(
         "--cookies",
         default=".secrets/bilibili-cookies.txt",
         help="B 站 cookie（Netscape 格式），默认 .secrets/bilibili-cookies.txt",
@@ -220,13 +261,24 @@ def main(argv: list[str] | None = None) -> int:
     bvid = bili_links.extract_bvid(args.video_url)
     workdir = Path(args.workdir)
 
-    links = load_links(args, bvid)
+    links, raw_text, from_file = load_links(args.links, args.cookies, bvid)
     if not links:
         print("没有解析到任何阵型链接：置顶笔记可能是图片，或 cookie 失效。", file=sys.stderr)
+        if not from_file:
+            print(f"原始文本已存到 {write_raw(workdir, raw_text)}", file=sys.stderr)
         print("按 references/workflow.md 手工建 links.json，再用 --links 传入。", file=sys.stderr)
         return 1
 
     mapping = load_mapping(args.mapping)
+    gaps = missing_numbers(links, args.count, mapping)
+    if gaps and not from_file:
+        # 缺号的链接一上传就是半套数据，且事后很难补 —— 先停下来让人核对。
+        print(f"缺少编号：{gaps}", file=sys.stderr)
+        print(f"原始文本已存到 {write_raw(workdir, raw_text)}", file=sys.stderr)
+        print("补一份 links.json 后用 --links 传入（见 references/workflow.md）。", file=sys.stderr)
+        return 1
+    if gaps:
+        print(f"提醒：links.json 里没有编号 {gaps}，对应抽帧会被跳过。", file=sys.stderr)
     video = download_video(args.video_url, workdir, bvid)
     duration = video_duration(video)
     frames = extract_frames(
@@ -260,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
                     "th_level": args.th_level,
                     "layout_link": row["link"],
                     "source_url": args.video_url,
-                    "source_site": "bilibili",
+                    "source_site": args.source_site,
                 },
                 args.api_base,
                 args.user,
