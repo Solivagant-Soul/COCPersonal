@@ -67,7 +67,11 @@ def video_cache_dir(workdir: Path, bvid: str) -> Path:
 
 
 def download_video(video_url: str, workdir: Path, bvid: str | None = None) -> Path:
-    """下载 720p 以内的**视频轨**（不合并音轨，抽帧不需要声音）。"""
+    """下载 1080P 以内的**视频轨**（不合并音轨，抽帧不需要声音）。
+
+    **尽量取 1080P**：480P 的抽帧在页面上放大后阵型细节糊成一片（用户实拍反馈）。
+    B 站匿名只缺「1080P 高码率」（大会员），普通 1080P 轨匿名可取。
+    """
     bvid = bvid or bili_links.extract_bvid(video_url)
     target = video_cache_dir(workdir, bvid)
     target.mkdir(parents=True, exist_ok=True)
@@ -82,8 +86,9 @@ def download_video(video_url: str, workdir: Path, bvid: str | None = None) -> Pa
         "yt_dlp",
         "-f",
         # B 站匿名只能拿到 DASH 的**纯视频轨**（没有 `b` 这种音视频合一的格式），
-        # 所以必须用 `bv*`；优先级 480 → 720 → 任意。
-        "bv*[height<=480][ext=mp4]/bv*[height<=720][ext=mp4]/bv*[height<=720]/bv*",
+        # 所以必须用 `bv*`。1080P 匿名可取（只有「1080P 高码率」要大会员），
+        # 而 480P 放大后阵型细看不清 —— 从高往低退。
+        "bv*[height<=1080][ext=mp4]/bv*[height<=720][ext=mp4]/bv*[height<=480][ext=mp4]/bv*",
         "--no-playlist",
         "-o",
         str(target / "video.%(ext)s"),
@@ -113,7 +118,9 @@ def extract_frames(video: Path, timestamps: list[float], frames_dir: Path) -> li
                 "-frames:v",
                 "1",
                 "-q:v",
-                "3",
+                # q=2 在 1080P 下约 600 KiB/张（30 张约 18 MiB），仍远低于 5 MiB 上限；
+                # 比 q=3 明显耐放大，阵型页点开看细节不糊。
+                "2",
                 str(out),
             ],
             check=True,

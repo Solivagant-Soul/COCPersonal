@@ -223,10 +223,11 @@
 
 ### 6.2 流程
 
-1. **下载**：`yt-dlp -f "bv*[height<=480][ext=mp4]/bv*[height<=720]..."` 下到临时目录
-   （B 站匿名只给 DASH 纯视频轨，没有音视频合一的 `b`）
+1. **下载**：`yt-dlp -f "bv*[height<=1080][ext=mp4]/bv*[height<=720][ext=mp4]/bv*..."` 下到临时目录
+   （B 站匿名只给 DASH 纯视频轨，没有音视频合一的 `b`；普通 1080P 轨匿名可取）
 2. **抽帧**：`ffprobe` 取时长 `D`，按 `N = --count`（默认 30）计算 `interval = D / N`，
-   在第 `i` 帧的 `i*interval + 0.5*interval`（**段中点**）处取图；输出 `01.jpg`–`30.jpg`（JPEG q=3）
+   在第 `i` 帧的 `i*interval + 0.5*interval`（**段中点**）处取图，`-q:v 2`
+   （1080P 下约 0.6 MiB/张，远低于 5 MiB 上限）；输出 `01.jpg`–`30.jpg`
 3. **解析链接**：
    - 用 cookie 调 `x/v2/reply/wbi/main`（脚本内实现 wbi 签名），失败退回匿名的 `x/v2/reply`
    - 优先取置顶评论；置顶被折叠成专栏（`note_cvid`）或 `bilibili.com/opus/...` 笔记时跟进抓正文
