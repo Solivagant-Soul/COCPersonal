@@ -84,7 +84,12 @@ def detect_image_ext(head: bytes) -> str | None:
 
 
 def check_basic_auth(header: str | None, username: str, password: str) -> bool:
-    """校验 ``Authorization: Basic`` 头。任一配置凭据为空 → 直接失败。"""
+    """校验 ``Authorization: Basic`` 头。任一配置凭据为空 → 直接失败。
+
+    **按字节比较**：``secrets.compare_digest`` 只接受 ASCII 字符串，中文账号或
+    口令会抛 ``TypeError``（500）；先编码成 UTF-8 再比，既支持非 ASCII，也保持
+    定长比较。
+    """
     if not username or not password:
         return False
     if not header:
@@ -93,14 +98,14 @@ def check_basic_auth(header: str | None, username: str, password: str) -> bool:
     if scheme.lower() != "basic" or not token:
         return False
     try:
-        raw = base64.b64decode(token, validate=True).decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
+        raw = base64.b64decode(token, validate=True)
+    except ValueError:
         return False
-    supplied_user, sep, supplied_pass = raw.partition(":")
+    supplied_user, sep, supplied_pass = raw.partition(b":")
     if not sep:
         return False
-    return secrets.compare_digest(supplied_user, username) and secrets.compare_digest(
-        supplied_pass, password
+    return secrets.compare_digest(supplied_user, username.encode("utf-8")) and (
+        secrets.compare_digest(supplied_pass, password.encode("utf-8"))
     )
 
 

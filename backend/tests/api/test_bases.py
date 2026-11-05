@@ -146,6 +146,61 @@ async def test_upload_is_idempotent(client, session, admin_env, media_root):
     count = (await session.execute(select(func.count()).select_from(BaseLayout))).scalar_one()
     assert count == 1
 
+
+async def test_upload_duplicate_writes_only_one_file(client, admin_env, media_root):
+    """幂等命中时不能再落一份图片：否则每次重跑都会多出一份孤儿文件。"""
+    files = {"image": ("a.png", PNG, "image/png")}
+    data = {"title": "阵型A", "th_level": "18", "layout_link": LINK}
+    await client.post("/api/v1/admin/bases", data=data, files=files,
+                      auth=("boss", "s3cret-pass"))
+    await client.post("/api/v1/admin/bases", data=data, files=files,
+                      auth=("boss", "s3cret-pass"))
+    files_on_disk = [p for p in media_root.rglob("*") if p.is_file()]
+    assert len(files_on_disk) == 1
+
+
+async def test_uploaded_layout_is_publicly_listed(client, session, admin_env, media_root):
+    """上传即发布：列表接口要立刻看得到，且库里 is_published 为真。"""
+    resp = await client.post(
+        "/api/v1/admin/bases",
+        data={"title": "阵型A", "th_level": "18", "layout_link": LINK},
+        files={"image": ("a.png", PNG, "image/png")},
+        auth=("boss", "s3cret-pass"),
+    )
+    assert resp.status_code == 201
+
+    row = (await session.execute(select(BaseLayout))).scalars().one()
+    assert row.is_published is True
+
+    listed = await client.get("/api/v1/bases", params={"page_size": 50})
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["data"]["total"] == 1
+    assert [item["title"] for item in body["data"]["items"]] == ["阵型A"]
+    assert body["data"]["items"][0]["imagePath"] == resp.json()["data"]["imagePath"]
+
+
+async def test_upload_accepts_non_ascii_credentials(client, monkeypatch, media_root):
+    """中文账号/口令不能 500：Basic 头解码成字节后再比。"""
+    monkeypatch.setenv("ADMIN_USERNAME", "站长")
+    monkeypatch.setenv("ADMIN_PASSWORD", "口令123")
+    token = base64.b64encode("站长:口令123".encode("utf-8")).decode("ascii")
+
+    resp = await client.post(
+        "/api/v1/admin/bases",
+        data={"title": "阵型A", "layout_link": LINK},
+        headers={"Authorization": f"Basic {token}"},
+    )
+    assert resp.status_code == 201
+
+    wrong = base64.b64encode("站长:口令124".encode("utf-8")).decode("ascii")
+    resp = await client.post(
+        "/api/v1/admin/bases",
+        data={"title": "阵型B", "layout_link": LINK},
+        headers={"Authorization": f"Basic {wrong}"},
+    )
+    assert resp.status_code == 401
+
 # --- Task 3: 本地媒体静态服务 ---
 
 import httpx
