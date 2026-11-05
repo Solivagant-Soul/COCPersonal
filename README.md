@@ -1,175 +1,259 @@
 # COCPersonal
 
-《部落冲突》查询站：**查询**（玩家 / 部落档案）+ **排行榜**（全服的部落榜 / 玩家榜）。
-浏览器网页（Vue 3 SPA），后端沿用 COCBack（FastAPI + PostgreSQL），单机 Docker Compose 部署。
+《部落冲突》（Clash of Clans）资料查询站 —— 浏览器访问的网页应用。
 
-> 这不是微信小程序项目。父目录 `MiniProgram/` 下的小程序版不在本仓库内 —— 本仓库是
-> 「前端重写为网页 + 后端同仓」的独立项目。
+前端是同仓的 Vue 3 单页应用，后端是 FastAPI 服务（整体搬自 COCBack），
+数据落在 PostgreSQL，单机 Docker Compose 部署。项目以 PC 浏览器为主，
+个人使用，不含账号体系；小程序版不在本仓库内。
 
 ## 功能
 
-- **查询**：玩家 / 部落档案。
-- **排行榜**：实时榜（全服部落 / 玩家）。
-- **赛季榜 / 阵容 / 阵型**：赛季榜按最近 3 个快照切换；阵容页展示热门配兵；
-  **阵型页**是 18 本防守阵图集（卡片 + 等级筛选 + 复制官方链接），站长可在页面里
-  上传链接与图片，上传即发布。
-- **阵型图片**：存在 `media` 卷里，库里只存 `/media/bases/YYYY/MM/...` 相对路径；
-  批量导入用项目 skill `.opencode/skills/coc-base-import/`（B 站视频 → 截图 + 置顶链接）。
-- **数据来源**：查询与实时榜来自 Supercell 官方 API；赛季榜与阵容来自 War Report
-  （[https://warreport.app](https://warreport.app)）——**署名是使用条件**，见
-  `docs/deployment.md` §12。
+| 模块 | 说明 |
+| --- | --- |
+| **查询** | 按标签查询玩家 / 部落档案。玩家页含战报，部落页含成员列表 |
+| **排行榜** | 全服部落榜与玩家榜（部落 / 玩家切换、分页），显示榜单抓取时间；读时缓存 + 定时采集 |
+| **赛季榜** | 最近 3 个赛季快照切换，展示职业选手与头部玩家的赛季数据 |
+| **阵容** | 解析分享码，展示热门配兵、兵种等级与图标 |
+| **阵型** | 18 本防守阵图集：卡片浏览、等级筛选、复制官方链接；站长可在页面内上传，上传即发布 |
+| **体验** | 深色主题、搜索历史、收藏、统一加载态与错误页、友好 404 |
+
+后端还保留着部落搜索、战争日志、当前战争、CWL、升级数据、公告、投稿等接口，
+供后续页面或外部调用使用；网页导航只呈现上面五项。
+
+## 架构
+
+前后端分离、同仓两目录，线上由 nginx 统一入口：
+
+```
+浏览器 ── HTTP ──> nginx (web)
+                     ├── /                Vue SPA 构建产物
+                     ├── /api/            ──> api:8000（FastAPI）
+                     ├── /media/          ──> 媒体卷（只读）
+                     ├── /admin/          ──> api:8000（sqladmin 后台）
+                     └── /healthz /readyz ──> api:8000
+                                                └── postgres:16
+```
+
+- **只有 `web` 对外暴露端口**，`api` 与 `postgres` 只在 compose 内部网络里。
+- **单 worker 单副本**：API 与 APScheduler 采集器同进程。限流、读时缓存、调度都是
+  进程内状态，扩 worker 会放大上游请求并重复执行采集任务。
+- **上游两种来源**：Supercell 官方 API（查询、实时榜）与 War Report（赛季榜、阵容）。
+- **缓存分层**：请求时旁路缓存（`meta.cache` 为 `HIT` / `MISS` / `STALE`），
+  采集器定时批量落库；上游故障时可用旧数据降级，但业务态错误（未找到、不在战争中、
+  战争日志私密）不会降级。
+- **媒体与素材分离**：用户上传的阵型图进 `media` 卷，库里只存
+  `/media/bases/YYYY/MM/...` 相对路径；Fankit 兵种图标是宿主机静态目录，
+  不入镜像、不入版本库。
+
+## 技术栈
+
+| 层 | 技术 |
+| --- | --- |
+| 前端 | Vue 3 `<script setup>` + TypeScript + Vite + Vue Router + Pinia + Element Plus + axios + Vitest |
+| 后端 | Python 3.12 + FastAPI + SQLAlchemy 2.0 async + asyncpg + Alembic + APScheduler + sqladmin |
+| 数据 | PostgreSQL 16 |
+| 部署 | Docker Compose（nginx + uvicorn + postgres），HTTP-only，可选 HTTPS |
 
 ## 目录
 
 | 路径 | 内容 |
 | --- | --- |
-| `backend/` | 后端：FastAPI + SQLAlchemy 2.0 async + PostgreSQL + alembic + APScheduler。**整体搬自 COCBack**。其硬约束、环境陷阱、测试约定见 **`backend/AGENTS.md`** |
-| `frontend/` | 前端：Vue 3 + Vite + TypeScript + Element Plus + Vue Router + Pinia + axios + Vitest |
-| `docs/deployment.md` | **部署文档（权威）**：.env 逐项说明、建表与导入验证、冒烟清单、运维、HTTPS 实操 |
-| `deploy/nginx.conf` | 对外入口：托管 SPA 静态文件 + 反代 `/api`、`/admin`、`/media`、探针 |
-| `docker-compose.yml` | 单机三容器栈：`web`（对外 80）+ `api`（内部 8000）+ `postgres` |
-| `.env.example` | 组合栈的环境变量模板（**含必填项说明**） |
-| `docs/superpowers/` | 设计规格与实施计划 —— **本仓库的权威**，与代码冲突时以代码为准并记一条裁定 |
+| `backend/` | FastAPI 后端：路由、Supercell 客户端、缓存、采集器、数据模型、迁移与测试 |
+| `backend/app/coc/fixtures/` | 无 Token 时使用的本地占位响应 |
+| `backend/AGENTS.md` | 后端硬约束、环境陷阱与测试约定（改后端前先读） |
+| `frontend/` | Vue 3 前端：页面、组件、API 封装、路由与样式 |
+| `frontend/src/api/endpoints.ts` | **所有** URL 与查询参数名的唯一出处 |
+| `deploy/nginx.conf` | 线上入口配置：静态托管 + `/api`、`/admin`、`/media` 反代 |
+| `deploy/compose.sh` | 部署入口：从 `PUBLIC_BASE_URL` 推导端口，补素材图 |
+| `docker-compose.yml` | 单机三容器栈：`web` + `api` + `postgres` |
+| `.env.example` | 组合栈环境变量模板（含必填项说明） |
+| `docs/deployment.md` | **部署权威文档**：逐项配置、验证、备份、HTTPS、排障 |
+| `docs/superpowers/` | 设计规格与实施计划；与代码冲突时以代码为准，并记一条裁定 |
+| `scripts/fetch_fankit_assets.py` | 下载 Fankit 图标到 `frontend/public/pictures/` |
 
-## 本地开发（Windows）
+## 快速开始
 
-前置：Python 3.12、Node `^20.19 || >=22.12`（开发机为 24）、PostgreSQL 16。
+### 前置条件
 
-本机用的是**免安装 PostgreSQL**：`C:\pgportable`，监听 `127.0.0.1:5433`，trust 认证。
-这不是洁癖，是没得选 —— 本机 CPU 虚拟化在固件层被关闭，Docker Desktop 与 WSL2 都不可用
-（来龙去脉见 `backend/AGENTS.md` 的 R12）。
+- Python **3.12+**
+- Node **`^20.19 || >=22.12`**
+- PostgreSQL **16**（本地实例，或自行用容器起一个）
 
-```powershell
-# 0) 数据库就绪
-C:\pgportable\pgsql\bin\pg_isready.exe -h 127.0.0.1 -p 5433 -U postgres
+### 1. 后端
 
-# 1) 后端
+```bash
 cd backend
-Copy-Item .env.example .env        # 填值；COC_API_TOKEN 留空 = 夹具模式（见下）
-# 本地阵型图片目录（相对 backend/；不设则用默认 /data/media，Windows 上写不进去）
-# 在 backend/.env 里加一行：MEDIA_ROOT=.media
-New-Item -ItemType Directory -Force .media | Out-Null   # 必须在启动前建好，否则 /media 不挂载
-alembic upgrade head               # 建表（首次、或迁移有更新时）
-python -m app.cli seed-dev-rankings # 灌入夹具排行（无 Token 时排行榜才有数据）
-python -m uvicorn app.main:app --reload --port 8000
+cp .env.example .env          # Windows PowerShell：Copy-Item .env.example .env
+```
 
-# 2) 前端（另开一个终端）
+在 `backend/.env` 里至少填好：
+
+```dotenv
+DATABASE_URL=postgresql+asyncpg://<用户>:<密码>@127.0.0.1:5432/<库名>
+MEDIA_ROOT=./.media           # 阵型图片目录，必须是可写路径
+PUBLIC_BASE_URL=http://127.0.0.1:8000
+```
+
+`COC_API_TOKEN` 留空即可启动**夹具模式**：不请求官方 API，由
+`backend/app/coc/fixtures/` 的样本应答，接口契约与页面都能跑通。
+注意它是必填字段（可以为空值），`.env` 里要保留 `COC_API_TOKEN=` 这一行。
+
+```bash
+mkdir -p .media               # 启动前建好，否则 /media 不挂载
+alembic upgrade head          # 建表
+python -m app.cli seed-dev-rankings   # 可选：灌入夹具排行，无 Token 时榜单才有数据
+python -m app.cli import-game-data    # 可选：导入升级数据（2073 行）
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+### 2. 前端
+
+```bash
 cd frontend
 npm install
-npm run dev                        # http://localhost:5173（/api 已反代到 :8000）
+npm run dev
 ```
 
-浏览器打开 `http://localhost:5173`，导航有「查询」「排行榜」「阵容」「阵型」四项
-（阵型页已可浏览与上传；投稿 / 公告 / 后台入口已按设计剥离，后端代码仍在）。
+打开 `http://localhost:5173`。开发服务器的 `/api` 与 `/media` 已代理到 `:8000`。
+生产构建用 `npm run build`，产物在 `frontend/dist/`。
 
-### 测试与构建
+### 3. 后台
 
-```powershell
-cd backend;  python -m pytest -q     # 686 passed
-cd frontend; npm run test            # 185 passed（Vitest）
-cd frontend; npm run build           # vue-tsc 类型检查 + 产物到 frontend/dist/
-```
+`http://localhost:8000/admin/` 使用 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登录。
+凭据只从环境变量读取，不入库，也没有 `create-admin` 命令。
 
-后端测试会自动跑 `alembic upgrade head`，所以「先跑测试」也能把表建好。
+## 配置
 
-## 部署（Docker Compose，Linux 单机）
+组合栈的配置集中在仓库根 `.env`（由 `.env.example` 复制）。**`.env` 不入版本库。**
 
-> 本节是速查。**完整部署步骤（.env 逐项、建表/导入的验证 SQL、冒烟清单、备份恢复、
-> HTTPS 实操）见权威文档 [`docs/deployment.md`](docs/deployment.md)。**
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | ✅ | 数据库密码；缺失时 `compose up` 直接报错并点名变量 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | ✅ | 后台登录凭据 |
+| `ADMIN_SECRET_KEY` | ✅ | 后台 session 签名密钥，必须是随机值 |
+| `PUBLIC_BASE_URL` | ✅ | 站点对外绝对地址，**同时决定对外端口** |
+| `POSTGRES_DB` / `POSTGRES_USER` | — | 默认 `coc` |
+| `COC_API_TOKEN` | — | Supercell Token；留空 = 夹具模式 |
+| `COC_BASE_URL` | — | 留空走官方；无静态 IP 时填 RoyaleAPI 代理 |
+| `COC_RATE_LIMIT` / `COC_TIMEOUT` | — | 默认 8 次/秒、15 秒 |
+| `WARREPORT_BASE_URL` / `WARREPORT_TIMEOUT` | — | War Report 上游，默认可用；**不要写成空值** |
+| `RATE_LIMIT_PER_MINUTE` | — | 每 IP 每分钟请求数，默认 60；探针豁免 |
+| `LOG_LEVEL` | — | 默认 `INFO` |
 
-只有 `web` 映射端口，`api` 与 `postgres` 都只在 compose 内部网络里。
-
-```bash
-cp .env.example .env          # 填 POSTGRES_PASSWORD、ADMIN_USERNAME/PASSWORD/SECRET_KEY、PUBLIC_BASE_URL
-./deploy/compose.sh sync-assets      # 补素材图（约 246 MB，只需宿主机有 python3，不碰 docker）
-./deploy/compose.sh up -d --build
-
-# 首次部署：建表 + 导入升级数据（空库的升级接口只返回空列表）
-docker compose exec api alembic upgrade head
-docker compose exec api python -m app.cli import-game-data
-
-# 可选：还没有真实 Token 时，让排行榜有数据可看
-docker compose exec api python -m app.cli seed-dev-rankings
-```
-
-然后访问 `http://<服务器IP>/`。
-
-### 对外端口由 `PUBLIC_BASE_URL` 决定
-
-**对外端口是 `PUBLIC_BASE_URL` 的一部分**：写 `http://1.2.3.4:7788` 就对外 7788，
-没写端口就是 `http`→80 / `https`→443。想换端口**只改 `.env` 这一行**。
-
-docker compose 只支持整值 `${VAR}` 插值、没法在 YAML 里从 URL 里抠出端口，
-所以这一步由 `deploy/compose.sh` 完成（读 `.env` → 解析端口 → 转交 compose）：
-
-```bash
-./deploy/compose.sh up -d          # 用它，不要直接 docker compose up -d
-./deploy/compose.sh --print-port   # 只打印推导出的端口（排障用）
-```
-
-直接跑 `docker compose up -d` 不会报错，但会**回落到 80 端口** —— 于是站点跑在 80 上
-而 `PUBLIC_BASE_URL` 指向 7788，浏览器能开页面但投稿图片全裂，且没有任何报错。
-
-改端口后记得**放行防火墙与云安全组**（`7788/tcp`），否则外网打不开。
-
-排障：
-
-```bash
-docker compose ps
-docker compose logs -f api
-docker compose logs -f web
-docker compose exec api alembic current
-```
-
-`POSTGRES_PASSWORD` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_SECRET_KEY` /
-`PUBLIC_BASE_URL` 五项用 `${VAR:?}` 保护 —— 没填会在 `docker compose up` 时**直接报错并
-点名缺哪个变量**，不会带着空密码起来。`ADMIN_SECRET_KEY` 必须是随机值：
+生成随机密钥：
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-### HTTPS 开关（默认关闭）
+## API 概览
 
-当前是 **HTTP-only**（无域名、无证书）。要上 HTTPS 不用改任何代码，改配置即可：
+所有业务接口以 `/api/v1` 为前缀，统一响应体：
 
-1. `docker-compose.yml` 的 `web` **不用**加端口行 —— `deploy/compose.sh` 看到
-   `PUBLIC_BASE_URL` 是 `https://` 就会自动把**宿主机侧**端口取 443、
-   **容器侧**端口取 443（容器内 nginx 的 TLS server 块）。只要加证书挂载：
-   `- ./deploy/certs:/etc/nginx/certs:ro`
-2. 取消 `deploy/nginx.conf` 末尾那段注释掉的 `443 ssl` server，把它的 location 段按注释补齐
-   （**必须**打开 —— 容器侧没有 443 server 块的话，宿主机连上 443 端口会被拒绝）
-3. 80 端口的 server 里改成 `return 301 https://$host$request_uri;`（保留 ACME 验证目录的 location）
-4. `.env` 的 `PUBLIC_BASE_URL` 改成 `https://<域名>`，再 `./deploy/compose.sh up -d`
-5. 证书续期仿照 `backend/deploy/certbot-renew.sh` 写一份（**注意**：那个脚本引用的
-   `certbot`/`nginx` 服务在本仓库 compose 里不存在，只抄思路）
+```json
+{
+  "data": {},
+  "meta": { "cache": "HIT", "fetched_at": "...", "age_seconds": 0, "ttl_seconds": 300 }
+}
+```
 
-逐步命令见 `docs/deployment.md` §9。
+- `meta.cache` 为大写的 `HIT` / `MISS` / `STALE`。
+- 分页参数 `page`（默认 1）与 `page_size`（默认 20，上限 50；超限**截断**而非 422）。
+- 对外限流默认 60 次/分钟/IP；`/healthz`、`/readyz` 不计入。
 
-## 数据与夹具（还没有真实 Token 时）
+| 分组 | 主要接口 |
+| --- | --- |
+| 探针 | `GET /healthz`、`GET /readyz` |
+| 玩家 | `GET /api/v1/players/{tag}`、`GET .../battles` |
+| 部落 | `GET /api/v1/clans/search`、`GET /api/v1/clans/{tag}`、`.../members`、`.../warlog`、`.../currentwar`、`.../cwl` |
+| 实时榜 | `GET /api/v1/locations`、`GET /api/v1/rankings/{kind}` |
+| 赛季榜 | `GET /api/v1/rankings/warreport/seasons`、`GET .../seasons/{snapshot}/{kind}` |
+| 阵容 | `GET /api/v1/armies` |
+| 阵型 | `GET /api/v1/bases`、`POST /api/v1/admin/bases`（HTTP Basic） |
+| 其他 | 公告、升级数据、投稿等，详见 `backend/app/api/routes/` |
 
-`COC_API_TOKEN` **留空或为占位值**时，后端不打官方 API，改由 `backend/app/coc/fixtures/`
-的本地样本应答（`backend/app/coc/devfixtures.py` 的 `FixtureTransport`）。这样在没有
-Supercell Token 的情况下，整站也能跑通、且仍然走真实的后端响应契约。
+## 数据来源与署名
 
-⚠️ 这些样本是**手搓占位数据**，每个都带 `_source` 与 `_todo` 两个键自报身份；
-拿到真实 Token 后要换成真实响应。排行榜数据来自 `seed-dev-rankings` 造的种子，
-不是真实榜单。
+- **查询与实时榜**：Supercell 官方 API。没有 Token 时自动切到本地夹具，
+  页面与接口仍然可用，但数据是占位样本。
+- **赛季榜与阵容**：War Report（[https://warreport.app](https://warreport.app)），无需 Key。
+  **署名是使用条件**：赛季榜面板、阵容页与全站页脚三处都必须保留来源标注
+  （`SourceNote.vue` / `MainLayout.vue`）。修改相关页面前先读 `docs/deployment.md` §12。
+- **阵型素材**：由站长整理上传，来源链接随条目保存。
 
-拿到真实 Token 后：在 `.env` 里填 `COC_API_TOKEN`（**绝不入库**）。服务器没有静态 IP
-时同时填 `COC_BASE_URL=https://cocproxy.royaleapi.dev/v1`，并把 Supercell key 的
-Allowed IP 填代理的 `45.79.218.79`（不是服务器 IP）。
+**Token 与密钥绝不入库**，只放在 `.env`；`.env.example` 只保留空占位。
+
+## 测试与构建
+
+```bash
+# 后端（backend/）
+python -m pytest -q            # 686 项
+python -m uvicorn app.main:app --reload --port 8000
+
+# 前端（frontend/）
+npm run test                   # 185 项（Vitest）
+npm run build                  # vue-tsc 类型检查 + 产物到 dist/
+```
+
+后端测试会自行执行 `alembic upgrade head`，因此先跑测试也能把表建好。
+测试默认连接 `localhost:5433` 的 PostgreSQL，可用 `DATABASE_URL` 覆盖。
+
+## 部署
+
+> 以下只是速查。**完整步骤见 [`docs/deployment.md`](docs/deployment.md)**：
+> `.env` 逐项说明、建表与导入验证、冒烟清单、备份恢复、HTTPS 实操、排障。
+
+```bash
+cp .env.example .env                  # 填必填项
+./deploy/compose.sh sync-assets       # 补 Fankit 素材图（约 250 MB，只需宿主机有 python3）
+./deploy/compose.sh up -d --build     # 启动三容器
+
+# 首次部署：建表 + 导入升级数据
+docker compose exec api alembic upgrade head
+docker compose exec api python -m app.cli import-game-data
+
+# 可选：没有真实 Token 时，让排行榜有演示数据
+docker compose exec api python -m app.cli seed-dev-rankings
+```
+
+### 为什么用 `compose.sh` 而不是直接 `docker compose`
+
+对外端口是 `PUBLIC_BASE_URL` 的一部分（写 `http://1.2.3.4:7788` 就是 7788），
+而 compose 只能做整值插值，无法从 URL 里解析端口。`deploy/compose.sh` 负责
+读 `.env` → 推导端口 → 转交 compose。
+
+直接跑 `docker compose up -d` 不会报错，但会回落到 80 端口，导致
+`PUBLIC_BASE_URL` 与实际端口不一致（典型症状是页面能开、阵型图全裂）。
+改端口后记得放行防火墙与云安全组。
+
+```bash
+./deploy/compose.sh --print-port      # 查看推导出的端口
+./deploy/compose.sh logs -f api
+./deploy/compose.sh ps
+```
+
+### 素材图与媒体目录
+
+- Fankit 图标在 `frontend/public/pictures/`（gitignored），由 `web` 容器只读挂载。
+  缺少时页面不会报错，只会回落到首页，所以补图后要**看 Content-Type** 验证。
+- 用户上传的阵型图在 `media` 卷；备份要连这个卷一起备。
+- 改了卷挂载必须 `./deploy/compose.sh up -d web` 重建容器，`nginx -s reload` 不够。
 
 ## 已知限制
 
-- **`docker compose up` 从未在本机跑过**：本机 Docker 不可用，这里只验证到配置与构建产物
-  的正确性（69 项静态校验 + 镜像构建所需的文件齐备）。**第一次 `up` 必须在 Linux 机器上做**，
-  验收清单在 `docs/deployment.md` §10。浏览器 DOM 冒烟已于 2026-10-17 用本机
-  uvicorn + vite 组合补做通过（此前受 AdGuard 系统代理干扰，详见计划文档「联调记录」）。
-- **排行榜依赖采集写库**：种子脚本只造夹具数据；真实排名需要 Token + 采集器。
-- 前端只按 PC 浏览器设计（Element Plus 桌面端），没有做手机端响应式。
+- **夹具数据是占位样本**：每份响应带 `_source` / `_todo` 自报身份；拿到真实 Token 后
+  应替换为真实响应。
+- **排行榜依赖采集写库**：`seed-dev-rankings` 只造演示数据，真实排名需要有效 Token
+  与采集器运行。
+- **单 worker 单副本**：横向扩展前需要先把限流、缓存、调度改成共享实现，
+  并利用 `APP_ROLE` 拆分 API 与采集器。
+- **以 PC 浏览器为主**：Element Plus 桌面布局，未做手机端响应式适配。
+- **HTTPS 默认关闭**：配置开关与步骤已备好，需要域名与证书后按部署文档启用。
+- **SQLAlchemy 锁定 `<2.1`**：不要放宽上限，原因见 `backend/AGENTS.md`。
 
 ## 设计文档
 
 - 规格：`docs/superpowers/specs/2026-10-16-cocpersonal-design.md`
-- 计划：`docs/superpowers/plans/2026-10-16-cocpersonal-mvp.md`（含「联调记录」）
+- 计划与联调记录：`docs/superpowers/plans/2026-10-16-cocpersonal-mvp.md`
+- 赛季榜 / 阵容：`docs/superpowers/specs/2026-10-23-warreport-data-design.md`
+- 阵型功能：`docs/superpowers/specs/2026-11-04-coc-base-layouts-design.md`
