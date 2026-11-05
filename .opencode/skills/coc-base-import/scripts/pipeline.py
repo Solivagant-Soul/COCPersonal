@@ -22,15 +22,17 @@ from upload import UploadError, upload_one
 
 
 def frame_timestamps(duration: float, count: int) -> list[float]:
-    """把 ``duration`` 秒等分成 ``count`` 段，返回每段靠前 20% 的时间点。
+    """把 ``duration`` 秒等分成 ``count`` 段，返回每段**正中间**的时间点。
 
-    视频里每个阵型停留时长基本一致（本片约 3s/个），没有转场检测也够用；
-    取段首 20% 是为了避开换阵瞬间的过场动画。``--mapping`` 用来兜底修正。
+    视频里每个阵型停留时长基本一致（本片约 3.04s/个），没有转场检测也够用。
+    **必须取段中**：取段首时正好压在「阵型切换 + 编号角标未定格」的那一瞬间，
+    实测会拍到上一个阵型（或角标被切掉一半），整条数据错位一格。``--mapping``
+    仍可用来兜底修正。
     """
     if count <= 0:
         return []
     interval = duration / count
-    return [i * interval + interval * 0.2 for i in range(count)]
+    return [i * interval + interval * 0.5 for i in range(count)]
 
 
 def _ffmpeg() -> str:
@@ -65,7 +67,7 @@ def video_cache_dir(workdir: Path, bvid: str) -> Path:
 
 
 def download_video(video_url: str, workdir: Path, bvid: str | None = None) -> Path:
-    """下载 720p 以内的单文件版本（不合并，避免依赖 PATH 上的 ffmpeg）。"""
+    """下载 720p 以内的**视频轨**（不合并音轨，抽帧不需要声音）。"""
     bvid = bvid or bili_links.extract_bvid(video_url)
     target = video_cache_dir(workdir, bvid)
     target.mkdir(parents=True, exist_ok=True)
@@ -79,7 +81,9 @@ def download_video(video_url: str, workdir: Path, bvid: str | None = None) -> Pa
         "-m",
         "yt_dlp",
         "-f",
-        "b[height<=720][ext=mp4]/b[height<=720]",
+        # B 站匿名只能拿到 DASH 的**纯视频轨**（没有 `b` 这种音视频合一的格式），
+        # 所以必须用 `bv*`；优先级 480 → 720 → 任意。
+        "bv*[height<=480][ext=mp4]/bv*[height<=720][ext=mp4]/bv*[height<=720]/bv*",
         "--no-playlist",
         "-o",
         str(target / "video.%(ext)s"),
@@ -119,11 +123,42 @@ def extract_frames(video: Path, timestamps: list[float], frames_dir: Path) -> li
     return frames
 
 
+def _article_cache_path(workdir: str | Path, cvid: str) -> Path:
+    return Path(workdir) / "links.cache" / f"cv{cvid}.json"
+
+
+def load_article(cvid: str, cookies: str, workdir: str | Path | None) -> dict[str, object]:
+    """抓专栏正文，**成功过就落盘复用**。
+
+    B 站对 ``x/article/view`` 的匿名请求限流很紧（``-352`` / ``-509`` 一轮接一轮），
+    抓一次就缓存能省掉大量重试；同一条命令重跑（幂等验证）也不再打上游。
+    """
+    cache = _article_cache_path(workdir, cvid) if workdir else None
+    if cache is not None and cache.is_file():
+        try:
+            payload = json.loads(cache.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            payload = {}
+        content = (payload.get("data") or {}).get("content")
+        if content:
+            return {
+                "texts": [bili_links.html_to_text(str(content))],
+                "raw": payload,
+            }
+
+    article = bili_links.fetch_article(cvid, cookies)
+    if cache is not None:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(article["raw"], ensure_ascii=False), encoding="utf-8")
+    return article
+
+
 def load_links(
     links_path: str | None,
     cookies: str,
     bvid: str,
     comments_file: str | None = None,
+    workdir: str | Path | None = None,
 ) -> tuple[dict[int, str], str, bool]:
     """解析 ``编号 → 链接``。
 
@@ -169,7 +204,7 @@ def load_links(
     # 跟进失败不算致命 —— 把错误记进原文，主流程再按「没有/缺号」处理。
     for cvid in bili_links.extract_pinned_cvids(payload):
         try:
-            article = bili_links.fetch_article(cvid, Path(cookies))
+            article = load_article(cvid, cookies, workdir)
         except RuntimeError as exc:
             raw_parts.append(f"[取专栏 cv{cvid} 失败] {exc}")
             continue
@@ -299,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     workdir = Path(args.workdir)
 
     links, raw_text, from_file = load_links(
-        args.links, args.cookies, bvid, args.comments_file
+        args.links, args.cookies, bvid, args.comments_file, workdir
     )
     if not links:
         print("没有解析到任何阵型链接：置顶笔记可能是图片，或 cookie 失效。", file=sys.stderr)

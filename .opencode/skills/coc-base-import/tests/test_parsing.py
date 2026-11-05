@@ -129,10 +129,54 @@ def test_fetch_article_retries_transient_risk_codes(monkeypatch):
     assert parse_layout_codes(article["texts"][0])[1].endswith("TH18%3AWB%3A001")
 
 
+def test_load_article_caches_successful_fetch(tmp_path, monkeypatch):
+    """抓成功就落盘：B 站限流很紧，重跑不该再打上游。"""
+    payload = {
+        "code": 0,
+        "data": {"content": "<p>1:</p><p>https://link.clashofclans.com/en?action=OpenLayout&amp;id=TH18%3AWB%3A001</p>"},
+    }
+    monkeypatch.setattr(
+        pipeline.bili_links,
+        "fetch_article",
+        lambda cvid, cookies: {
+            "texts": [bili_links.html_to_text(payload["data"]["content"])],
+            "raw": payload,
+        },
+    )
+
+    first = pipeline.load_article("53362875", "cookies.txt", tmp_path)
+    assert pipeline._article_cache_path(tmp_path, "53362875").is_file()
+    assert parse_layout_codes(first["texts"][0])[1].endswith("TH18%3AWB%3A001")
+
+    # 第二次必须走缓存：fetch_article 一旦被调用就失败
+    def fail(cvid, cookies):  # pragma: no cover - 走到这里就是没命中缓存
+        raise AssertionError("缓存命中时不该再请求上游")
+
+    monkeypatch.setattr(pipeline.bili_links, "fetch_article", fail)
+    second = pipeline.load_article("53362875", "cookies.txt", tmp_path)
+    assert parse_layout_codes(second["texts"][0])[1].endswith("TH18%3AWB%3A001")
+
+
+def test_load_article_ignores_broken_cache(tmp_path, monkeypatch):
+    cache = pipeline._article_cache_path(tmp_path, "42")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text("{ 这不是 JSON", encoding="utf-8")
+
+    monkeypatch.setattr(
+        pipeline.bili_links,
+        "fetch_article",
+        lambda cvid, cookies: {"texts": ["1号：TH18:WB:AAA"], "raw": {"code": 0}},
+    )
+
+    article = pipeline.load_article("42", "cookies.txt", tmp_path)
+    assert article["texts"] == ["1号：TH18:WB:AAA"]
+
+
 def test_frame_timestamps_spans_duration():
     ts = frame_timestamps(91.27, 30)
     assert len(ts) == 30
-    assert 0.5 < ts[0] < 0.7
+    # 段中点：3.04s 的段 → 第一帧约 1.52s
+    assert 1.4 < ts[0] < 1.7
     assert 88.0 < ts[-1] < 90.0
 
 
