@@ -131,7 +131,8 @@ def load_links(
 
     - ``links_path`` 给了 ``--links`` 就直接用（``from_file=True``，人工清单可信）；
     - ``comments_file`` 给了 ``--comments-file`` 就当作置顶评论正文（无需 cookie）；
-    - 否则抓置顶评论，评论里只给了 ``bilibili.com/opus/...`` 笔记链接时**再抓笔记正文**；
+    - 否则抓置顶评论；置顶被折叠成专栏（``note_cvid``）或 ``bilibili.com/opus/...``
+      笔记时**跟进抓正文**（失败只记录，不中断）；
     - ``raw_text`` 是拿到的全部原始文本（+ 笔记 JSON），解析失败时由调用方落盘，
       供人工看图/手工补 ``links.json``。
     """
@@ -148,17 +149,41 @@ def load_links(
 
     if comments_file:
         texts = [Path(comments_file).read_text(encoding="utf-8")]
-    else:
-        texts = bili_links.fetch_pinned(bvid, Path(cookies))
+        raw_parts = list(texts)
+        links: dict[int, str] = {}
+        for text in texts:
+            links.update(bili_links.parse_layout_codes(text))
+        return links, "\n\n---\n\n".join(raw_parts), False
 
+    payload = bili_links.fetch_pinned_payload(bvid, Path(cookies))
+    texts = bili_links.extract_pinned_texts(payload)
     raw_parts = list(texts)
     links: dict[int, str] = {}
     for text in texts:
         links.update(bili_links.parse_layout_codes(text))
 
-    # 置顶只贴了笔记链接（UP 常用「链接在笔记里」）：跟进抓正文。
-    for opus_id in bili_links.extract_opus_ids(texts) if not links else []:
-        note = bili_links.fetch_opus(opus_id, Path(cookies))
+    # 置顶正文被折叠成「笔记」(note_cvid)：真正的链接在专栏里。
+    #
+    # **无条件跟进**：折叠预览里可能残留「1:」这种半截条目，不能因为
+    # 「已经解析出东西」就跳过专栏。专栏是权威文本，覆盖预览里的任何值。
+    # 跟进失败不算致命 —— 把错误记进原文，主流程再按「没有/缺号」处理。
+    for cvid in bili_links.extract_pinned_cvids(payload):
+        try:
+            article = bili_links.fetch_article(cvid, Path(cookies))
+        except RuntimeError as exc:
+            raw_parts.append(f"[取专栏 cv{cvid} 失败] {exc}")
+            continue
+        raw_parts.append(json.dumps(article["raw"], ensure_ascii=False, indent=2))
+        for text in article["texts"]:
+            links.update(bili_links.parse_layout_codes(text))
+
+    # 置顶只贴了 opus 动态链接：跟进抓正文。
+    for opus_id in bili_links.extract_opus_ids(texts):
+        try:
+            note = bili_links.fetch_opus(opus_id, Path(cookies))
+        except RuntimeError as exc:
+            raw_parts.append(f"[取笔记 {opus_id} 失败] {exc}")
+            continue
         raw_parts.append(json.dumps(note["raw"], ensure_ascii=False, indent=2))
         for text in note["texts"]:
             links.update(bili_links.parse_layout_codes(text))

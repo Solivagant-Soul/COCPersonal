@@ -12,15 +12,19 @@ description: 把 B 站阵型分享视频里的阵型（截图 + 置顶笔记链�
 
 ```bash
 python -c "import yt_dlp, imageio_ffmpeg, requests" || pip install yt-dlp imageio-ffmpeg requests
-test -f .secrets/bilibili-cookies.txt || echo "缺 cookie，见 references/workflow.md"
+test -f .secrets/bilibili-cookies.txt || echo "没有 cookie 也能跑（公开视频匿名可读），见 references/workflow.md"
 curl -sf "$COC_API_BASE/readyz" > /dev/null && echo "站点就绪"
 ```
 
-- `.secrets/bilibili-cookies.txt`：浏览器导出的 **Netscape 格式** cookie。
-  匿名抓评论会 403 / `-352`，必须带登录态。
+- `.secrets/bilibili-cookies.txt`：浏览器导出的 **Netscape 格式** cookie，**可选**。
+  公开视频的置顶评论与专栏匿名就能读（2026-11 实测）；只在撞风控时才需要登录态。
 - 服务器凭据走环境变量 `COC_ADMIN_USER` / `COC_ADMIN_PASSWORD`，
   **不要写进命令历史或文件**。
 - 站点根地址 `COC_API_BASE`（例如 `https://coc.example.com`）。
+
+脚本对 B 站是「尽力抓」：置顶正文被折叠成专栏（`note_cvid`）或 `opus` 笔记时
+会自动跟进抓正文；撞上 `-352` / `-509` 会退避重试（2s/4s/8s/16s）。跟进失败
+只记进 `links.raw.txt`，不会中断整轮。
 
 ## 2. 先 dry-run，让人确认映射
 
@@ -34,8 +38,8 @@ python .opencode/skills/coc-base-import/scripts/pipeline.py \
 
 - 链接编号与画面上 `#N` 角标是否一一对应；对不上时用 `--mapping`（见
   `references/workflow.md`）。
-- 置顶评论若是 `bilibili.com/opus/...` 笔记链接，脚本会自动跟进抓正文（图片笔记
-  抓不到文字）。
+- 链接来源的三种形态脚本都认：评论正文里的分享码、`note_cvid` 指向的专栏
+  （「编号一行、完整链接一行」）、`bilibili.com/opus/...` 笔记。
 - **解析失败或缺号会直接退出（非 0）**，并把抓到的原始文本存成
   `{workdir}/links.raw.txt`。此时按 workflow 手工建 `links.json`，
   加 `--links links.json` 重跑 dry-run —— 脚本不会带着半套链接上传。

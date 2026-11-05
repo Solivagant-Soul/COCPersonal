@@ -1,10 +1,13 @@
 from pathlib import Path
 
+import bili_links
 import pipeline
 from bili_links import (
     _collect_texts,
     extract_opus_ids,
+    extract_pinned_cvids,
     extract_pinned_texts,
+    html_to_text,
     normalize_layout_link,
     parse_layout_codes,
 )
@@ -33,6 +36,97 @@ def test_parse_keeps_full_url():
 def test_later_duplicate_number_wins():
     text = "3号：TH18:WB:AAA\n3号：TH18:WB:BBB"
     assert parse_layout_codes(text)[3] == BASE + "TH18%3AWB%3ABBB"
+
+
+def test_parse_numbered_full_urls():
+    """专栏笔记的格式是「编号一行、完整链接一行」。"""
+    text = (
+        "援军：1锅炉2女巫2猎手\n"
+        "1:\n"
+        "https://link.clashofclans.com/pt?action=OpenLayout&id=TH18%3AWB%3AAAAAMgAAAAKPapxXpLj4_Q_J_ZrHaXJP\n"
+        "2:\n"
+        "https://link.clashofclans.com/en?action=OpenLayout&id=TH18%3AWB%3AAAAAOwAAAAJ6x7FZ7x2FOVMMdhRWSONx\n"
+    )
+    links = parse_layout_codes(text)
+    assert links == {
+        1: "https://link.clashofclans.com/pt?action=OpenLayout&id=TH18%3AWB%3AAAAAMgAAAAKPapxXpLj4_Q_J_ZrHaXJP",
+        2: "https://link.clashofclans.com/en?action=OpenLayout&id=TH18%3AWB%3AAAAAOwAAAAJ6x7FZ7x2FOVMMdhRWSONx",
+    }
+
+
+def test_parse_strips_trailing_punctuation_from_url():
+    text = "3: https://link.clashofclans.com/pt?action=OpenLayout&id=TH18%3AWB%3Aabc，"
+    assert parse_layout_codes(text)[3].endswith("abc")
+
+
+def test_html_to_text_converts_paragraphs_and_entities():
+    raw = "<p>援军</p><p>1:</p><p>https://a.com/x?action=OpenLayout&amp;id=TH18%3AWB%3Aabc</p><p><br></p>"
+    text = html_to_text(raw)
+    assert "<p>" not in text
+    assert "&amp;" not in text
+    assert "https://a.com/x?action=OpenLayout&id=TH18%3AWB%3Aabc" in text
+    # 段落与 <br> 都变成了换行，编号与链接分行
+    assert "1:\nhttps://a.com" in text.replace("\r\n", "\n")
+
+
+def test_extract_pinned_cvids_reads_note_cvid_str():
+    payload = {
+        "data": {
+            "top_replies": [
+                {"note_cvid_str": "53362875", "content": {"message": "截断的预览"}},
+                {"note_cvid": 0, "content": {"message": "普通置顶"}},
+            ]
+        }
+    }
+    assert extract_pinned_cvids(payload) == ["53362875"]
+
+
+def test_parse_ignores_truncated_url_preview():
+    """置顶正文被折叠成 80 字符预览时会出现 ``https://li...``，不能当成链接。"""
+    assert parse_layout_codes("1:\nhttps://li...") == {}
+    # 截断尾巴之后若跟着真实条目，真实条目照常解析
+    assert parse_layout_codes(f"1:\nhttps://li...\n2:\nhttps://link.clashofclans.com/en?action=OpenLayout&id=TH18%3AWB%3A002") == {
+        2: "https://link.clashofclans.com/en?action=OpenLayout&id=TH18%3AWB%3A002"
+    }
+
+
+def test_fetch_article_retries_transient_risk_codes(monkeypatch):
+    """专栏接口常先回 -352 / -509，等两秒重试才给正文。"""
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    bodies = [
+        {"code": -352, "message": "-352"},
+        {"code": -509, "message": "请求过于频繁"},
+        {
+            "code": 0,
+            "data": {
+                "content": "<p>1:</p><p>https://link.clashofclans.com/en?action=OpenLayout&amp;id=TH18%3AWB%3A001</p>"
+            },
+        },
+    ]
+
+    class FakeSession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, params=None, timeout=None):
+            self.calls += 1
+            return FakeResponse(bodies[self.calls - 1])
+
+    session = FakeSession()
+    monkeypatch.setattr(bili_links, "_session_from_cookies", lambda path: session)
+    monkeypatch.setattr(bili_links.time, "sleep", lambda seconds: None)
+
+    article = bili_links.fetch_article("53362875", "不存在.txt")
+
+    assert session.calls == 3
+    assert parse_layout_codes(article["texts"][0])[1].endswith("TH18%3AWB%3A001")
 
 
 def test_frame_timestamps_spans_duration():
@@ -123,10 +217,17 @@ def test_missing_numbers_honours_mapping():
     assert missing_numbers(links, 3, {2: 3}) == []
 
 
+def _payload(*texts: str) -> dict:
+    """评论接口响应的最小形状（``top_replies[].content.message``）。"""
+    return {"data": {"top_replies": [{"content": {"message": t}} for t in texts]}}
+
+
 def test_load_links_dumps_raw_when_notes_are_images(tmp_path, monkeypatch):
     """置顶是图片笔记（没有正文）时，原始响应要落盘供人工看图。"""
     monkeypatch.setattr(
-        pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: ["看笔记 https://www.bilibili.com/opus/42"]
+        pipeline.bili_links,
+        "fetch_pinned_payload",
+        lambda bvid, cookies: _payload("看笔记 https://www.bilibili.com/opus/42"),
     )
     monkeypatch.setattr(
         pipeline.bili_links,
@@ -146,7 +247,9 @@ def test_load_links_dumps_raw_when_notes_are_images(tmp_path, monkeypatch):
 
 def test_load_links_parses_note_body(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: ["https://www.bilibili.com/opus/7"]
+        pipeline.bili_links,
+        "fetch_pinned_payload",
+        lambda bvid, cookies: _payload("https://www.bilibili.com/opus/7"),
     )
     monkeypatch.setattr(
         pipeline.bili_links,
@@ -158,6 +261,38 @@ def test_load_links_parses_note_body(tmp_path, monkeypatch):
 
     assert from_file is False
     assert links[1] == BASE + "TH18%3AWB%3AAAAARAAAAAAphHQWN6eIhzQedsGoEvXp"
+
+
+def test_load_links_follows_pinned_note_cvid_into_article(monkeypatch):
+    """本视频的真实形态：置顶正文被折叠，只挂 ``note_cvid``，链接在专栏里。"""
+    monkeypatch.setattr(
+        pipeline.bili_links,
+        "fetch_pinned_payload",
+        lambda bvid, cookies: {
+            "data": {
+                "top_replies": [
+                    {"note_cvid_str": "53362875", "content": {"message": "1:\nhttps://li..."}}
+                ]
+            }
+        },
+    )
+    paragraphs = "".join(
+        f"<p>{number}:</p><p>https://link.clashofclans.com/en?action=OpenLayout&amp;id=TH18%3AWB%3A{number:03d}</p>"
+        for number in range(1, 31)
+    )
+    monkeypatch.setattr(
+        pipeline.bili_links,
+        "fetch_article",
+        lambda cvid, cookies: {"texts": [html_to_text(paragraphs)], "raw": {"content": paragraphs}},
+    )
+
+    links, raw_text, from_file = pipeline.load_links(None, "cookies.txt", "BV1qHpY62EoT")
+
+    assert from_file is False
+    assert sorted(links) == list(range(1, 31))  # 30 条编号齐全
+    assert links[1].endswith("TH18%3AWB%3A001")
+    assert missing_numbers(links, 30, {}) == []
+    assert "content" in raw_text  # 原文落盘给人工核对
 
 
 def test_load_links_reads_comments_file_without_cookies(tmp_path):
@@ -187,7 +322,9 @@ def _argv(tmp_path: Path) -> list[str]:
 
 
 def test_main_stops_and_dumps_raw_when_nothing_parsed(tmp_path, monkeypatch):
-    monkeypatch.setattr(pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: ["好阵型"])
+    monkeypatch.setattr(
+        pipeline.bili_links, "fetch_pinned_payload", lambda bvid, cookies: _payload("好阵型")
+    )
 
     rc = pipeline.main(_argv(tmp_path))
 
@@ -198,7 +335,9 @@ def test_main_stops_and_dumps_raw_when_nothing_parsed(tmp_path, monkeypatch):
 def test_main_stops_when_numbers_are_missing(tmp_path, monkeypatch):
     """缺号直接停：半套数据传上去再补，比现在停下来更麻烦。"""
     monkeypatch.setattr(
-        pipeline.bili_links, "fetch_pinned", lambda bvid, cookies: [f"1号：{CODE}"]
+        pipeline.bili_links,
+        "fetch_pinned_payload",
+        lambda bvid, cookies: _payload(f"1号：{CODE}"),
     )
 
     rc = pipeline.main(_argv(tmp_path))
